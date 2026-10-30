@@ -74,8 +74,8 @@ final class TouchCaptureUIView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        // 让触摸投递不走系统延迟合并，压低输入延迟
-        window?.requestUnbufferedDispatch(for: .allTouchTypes)
+        // 让触摸投递不走系统延迟合并，压低输入延迟。这是 UIView 自己的方法。
+        requestUnbufferedDispatch(for: .allTouchTypes)
     }
 
     // MARK: - 触点映射
