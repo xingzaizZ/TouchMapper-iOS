@@ -18,8 +18,12 @@ struct FullScreenTouchView: View {
     @Binding var isEditingStickers: Bool
     @Binding var isPresented: Bool
 
-    @State private var showAddMenu = false
+    @Binding var backgroundImage: UIImage?
+    @Binding var backgroundOpacity: Double
+
+    @State private var showAddPanel = false
     @State private var showPresetSheet = false
+    @State private var showImagePicker = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -75,11 +79,19 @@ struct FullScreenTouchView: View {
                 )
                 .ignoresSafeArea()
 
-                StickerLayer(stickers: $stickers, isEditing: isEditingStickers)
-                    .ignoresSafeArea()
+                StickerLayer(
+                    stickers: $stickers,
+                    backgroundImage: $backgroundImage,
+                    backgroundOpacity: $backgroundOpacity,
+                    isEditing: isEditingStickers
+                )
+                .ignoresSafeArea()
 
-                VStack {
+                VStack(spacing: 8) {
                     toolbar
+                    if isEditingStickers {
+                        addPanel
+                    }
                     Spacer()
                 }
                 .padding(.horizontal, 12)
@@ -93,22 +105,91 @@ struct FullScreenTouchView: View {
         .sheet(isPresented: $showPresetSheet) {
             PresetSheet(stickers: $stickers)
         }
-        .actionSheet(isPresented: $showAddMenu) {
-            ActionSheet(
-                title: Text("添加按钮"),
-                buttons: addMenuButtons()
-            )
+        .sheet(isPresented: $showImagePicker) {
+            ImagePicker(image: $backgroundImage)
         }
     }
 
-    private func addMenuButtons() -> [ActionSheet.Button] {
-        var buttons: [ActionSheet.Button] = LayoutSticker.Kind.allCases.map { kind in
-            ActionSheet.Button.default(Text(kind.displayName)) {
-                addSticker(kind)
+    // MARK: - 添加面板（内嵌，不用 actionSheet，sheet 弹着时 actionSheet 会失效）
+
+    private var addPanel: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                if showAddPanel {
+                    ForEach(LayoutSticker.Kind.allCases, id: \.self) { kind in
+                        Button {
+                            addSticker(kind)
+                        } label: {
+                            Text(kind.displayName)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 9)
+                                .background(
+                                    Capsule().fill(kind.tint.opacity(0.55))
+                                )
+                        }
+                    }
+                    Button {
+                        showAddPanel = false
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .padding(9)
+                            .background(Circle().fill(Color.black.opacity(0.45)))
+                    }
+                } else {
+                    Button {
+                        showAddPanel = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "plus.circle.fill")
+                            Text("添加按键")
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(Capsule().fill(Color.black.opacity(0.45)))
+                    }
+                }
+                Spacer()
+            }
+
+            if backgroundImage != nil {
+                HStack(spacing: 10) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.white.opacity(0.8))
+
+                    Slider(value: $backgroundOpacity, in: 0.05...1.0)
+                        .frame(maxWidth: 220)
+
+                    Text("\(Int(backgroundOpacity * 100))%")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .frame(width: 38, alignment: .trailing)
+
+                    Button {
+                        backgroundImage = nil
+                    } label: {
+                        Text("移除")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.red.opacity(0.9))
+                    }
+
+                    Spacer()
+                }
             }
         }
-        buttons.append(.cancel(Text("取消")))
-        return buttons
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.black.opacity(0.45))
+        )
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     // MARK: - 顶部工具栏
@@ -125,7 +206,7 @@ struct FullScreenTouchView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.gray.opacity(0.5)))
-                .foregroundColor(.white)
+                .foregroundStyle(Color.white)
             }
 
             statusBadge
@@ -134,11 +215,11 @@ struct FullScreenTouchView: View {
 
             if isEditingStickers {
                 Button {
-                    showAddMenu = true
+                    showImagePicker = true
                 } label: {
-                    Image(systemName: "plus.circle.fill")
+                    Image(systemName: "photo.on.rectangle")
                         .font(.title3)
-                        .foregroundColor(.white)
+                        .foregroundStyle(backgroundImage == nil ? Color.white : Color.green)
                 }
 
                 Button {
@@ -146,18 +227,18 @@ struct FullScreenTouchView: View {
                 } label: {
                     Image(systemName: "square.grid.2x2")
                         .font(.title3)
-                        .foregroundColor(.white)
+                        .foregroundStyle(Color.white)
                 }
             }
 
             Toggle(isOn: $isEditingStickers) {
-                Text("编辑按钮").font(.caption)
+                Text("编辑").font(.caption)
             }
             .fixedSize()
 
             Text(isEditingStickers ? "编辑中" : "只读")
                 .font(.caption)
-                .foregroundColor(Color.white.opacity(0.7))
+                .foregroundStyle(Color.white.opacity(0.7))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -165,7 +246,7 @@ struct FullScreenTouchView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.black.opacity(0.45))
         )
-        .foregroundColor(.white)
+        .foregroundStyle(Color.white)
     }
 
     private var statusBadge: some View {
@@ -175,18 +256,23 @@ struct FullScreenTouchView: View {
                 .frame(width: 7, height: 7)
             Text(connection.status.isConnected ? "已连接" : "未连接")
                 .font(.caption)
-                .foregroundColor(Color.white.opacity(0.85))
+                .foregroundStyle(Color.white.opacity(0.85))
         }
     }
 
     // MARK: - 动作
 
     private func addSticker(_ kind: LayoutSticker.Kind) {
-        let offset = Double(stickers.count % 5) * 0.06
+        // 新贴纸放在画布中偏下的位置，按已有数量错开，避免完全重叠
+        let index = stickers.count
+        let column = index % 4
+        let row = (index / 4) % 3
         let sticker = LayoutSticker(kind: kind,
-                                    centerX: 0.28 + offset,
-                                    centerY: 0.72 - offset)
+                                    centerX: 0.30 + Double(column) * 0.13,
+                                    centerY: 0.70 - Double(row) * 0.11)
         stickers.append(sticker)
+        // 强反馈，确认真的加上了
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     private func exitFullScreen() {
@@ -200,5 +286,57 @@ struct FullScreenTouchView: View {
                               screenWidth: session.pixelWidth,
                               screenHeight: session.pixelHeight)
         session.reset()
+    }
+}
+
+extension LayoutSticker.Kind {
+    var tint: Color {
+        switch self {
+        case .joystick: return .cyan
+        case .skill:    return .orange
+        case .attack:   return .red
+        case .button:   return .green
+        }
+    }
+}
+
+// MARK: - 相册选图
+
+struct ImagePicker: UIViewControllerRepresentable {
+
+    @Binding var image: UIImage?
+    @Environment(\.presentationMode) private var presentationMode
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .photoLibrary
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        private let parent: ImagePicker
+
+        init(_ parent: ImagePicker) {
+            self.parent = parent
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let picked = info[.originalImage] as? UIImage {
+                parent.image = picked
+            }
+            parent.presentationMode.wrappedValue.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.presentationMode.wrappedValue.dismiss()
+        }
     }
 }

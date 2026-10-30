@@ -13,9 +13,13 @@ struct TouchMapperApp: App {
     @StateObject private var connection = TouchConnection()
     @StateObject private var session = TouchSession()
 
-    @State private var stickers: [LayoutSticker] = LayoutSticker.defaultLayout
+    @State private var stickers: [LayoutSticker] = LayoutSticker.loadSaved() ?? LayoutSticker.defaultLayout
     @State private var isEditingStickers = false
     @State private var isFullScreen = false
+
+    /// 键位参考背景图（用来对着电脑画面摆按钮），以及不透明度
+    @State private var backgroundImage: UIImage? = LayoutSticker.loadBackgroundImage()
+    @State private var backgroundOpacity: Double = LayoutSticker.loadBackgroundOpacity()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -35,13 +39,24 @@ struct TouchMapperApp: App {
                         session: session,
                         stickers: $stickers,
                         isEditingStickers: $isEditingStickers,
-                        isPresented: $isFullScreen
+                        isPresented: $isFullScreen,
+                        backgroundImage: $backgroundImage,
+                        backgroundOpacity: $backgroundOpacity
                     )
                     .transition(.opacity)
                     .zIndex(1)
                 }
             }
             .animation(.easeInOut(duration: 0.18), value: isFullScreen)
+            .onChange(of: stickers) { newValue in
+                LayoutSticker.save(newValue)
+            }
+            .onChange(of: backgroundOpacity) { newValue in
+                LayoutSticker.saveBackgroundOpacity(newValue)
+            }
+            .onChange(of: backgroundImage) { newValue in
+                LayoutSticker.saveBackgroundImage(newValue)
+            }
             .onChange(of: scenePhase) { phase in
                 // 切后台时把没抬起的触点全部释放，避免电脑端触点卡住
                 if phase != .active {
@@ -56,6 +71,12 @@ struct TouchMapperApp: App {
 }
 
 extension LayoutSticker {
+
+    private static let stickersKey = "touchmapper.stickers"
+    private static let backgroundKey = "touchmapper.background"
+    private static let backgroundOpacityKey = "touchmapper.backgroundOpacity"
+    private static let backgroundFile = "background.png"
+
     /// 首启默认布局
     static var defaultLayout: [LayoutSticker] {
         [
@@ -65,5 +86,63 @@ extension LayoutSticker {
             LayoutSticker(kind: .skill,    text: "技能2", centerX: 0.85, centerY: 0.50),
             LayoutSticker(kind: .button,   text: "蹲",    centerX: 0.09, centerY: 0.45)
         ]
+    }
+
+    // MARK: - 布局持久化
+
+    static func loadSaved() -> [LayoutSticker]? {
+        guard let data = UserDefaults.standard.data(forKey: stickersKey),
+              let decoded = try? JSONDecoder().decode([LayoutSticker].self, from: data) else {
+            return nil
+        }
+        return decoded
+    }
+
+    static func save(_ stickers: [LayoutSticker]) {
+        guard let data = try? JSONEncoder().encode(stickers) else { return }
+        UserDefaults.standard.set(data, forKey: stickersKey)
+    }
+
+    // MARK: - 背景图持久化
+
+    static var backgroundURL: URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return dir.appendingPathComponent(backgroundFile)
+    }
+
+    static func loadBackgroundImage() -> UIImage? {
+        guard FileManager.default.fileExists(atPath: backgroundURL.path),
+              let data = try? Data(contentsOf: backgroundURL) else { return nil }
+        return UIImage(data: data)
+    }
+
+    static func saveBackgroundImage(_ image: UIImage?) {
+        guard let image else {
+            try? FileManager.default.removeItem(at: backgroundURL)
+            return
+        }
+        // 压到 2048 长边，避免每次全屏解码超大图拖慢渲染
+        let maxSide: CGFloat = 2048
+        let size = image.size
+        let scale = min(1, maxSide / max(size.width, size.height))
+        let target = CGSize(width: size.width * scale, height: size.height * scale)
+
+        let renderer = UIGraphicsImageRenderer(size: target)
+        let resized = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
+
+        if let data = resized.jpegData(compressionQuality: 0.85) {
+            try? data.write(to: backgroundURL, options: .atomic)
+        }
+    }
+
+    static func loadBackgroundOpacity() -> Double {
+        let value = UserDefaults.standard.object(forKey: backgroundOpacityKey) as? Double
+        return value ?? 0.45
+    }
+
+    static func saveBackgroundOpacity(_ value: Double) {
+        UserDefaults.standard.set(value, forKey: backgroundOpacityKey)
     }
 }
