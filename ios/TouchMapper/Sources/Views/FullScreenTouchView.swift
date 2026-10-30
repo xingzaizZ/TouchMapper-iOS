@@ -25,7 +25,6 @@ struct FullScreenTouchView: View {
     @State private var showPresetSheet = false
     @State private var showImagePicker = false
     @State private var pickedImage: UIImage?
-    @State private var showImagePurpose = false
     /// 非 nil 表示这次选图是替换某个键位的图标
     @State private var pendingIconTarget: UUID?
     /// true 表示这次选图一定当键位图标（点「图标」按钮进来的）
@@ -122,30 +121,18 @@ struct FullScreenTouchView: View {
                     if pendingIconTarget != nil || wantsIconOnly {
                         applyPickedImageAsIcon()
                         wantsIconOnly = false
+                        pickedImage = nil
                     } else {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            showImagePurpose = true
-                        }
+                        // 选完背景图：直接生效，别再弹二次确认（sheet 关闭动画期间弹 dialog 会吞点击）
+                        applyPickedImageAsBackground()
                     }
                 },
                 onCancelled: {
                     pendingIconTarget = nil
+                    wantsIconOnly = false
+                    pickedImage = nil
                 }
             )
-        }
-        .confirmationDialog("这张图用来做什么？", isPresented: $showImagePurpose, titleVisibility: .visible) {
-            Button("设为键位图标") {
-                applyPickedImageAsIcon()
-            }
-            Button("设为背景参考图") {
-                if let pickedImage { backgroundImage = pickedImage }
-                pickedImage = nil
-            }
-            Button("取消", role: .cancel) {
-                pickedImage = nil
-            }
-        } message: {
-            Text("设为键位图标时，会替换当前选中的键位；没有选中就先新建一个图标键位。")
         }
     }
 
@@ -420,6 +407,18 @@ struct FullScreenTouchView: View {
         stickers.append(sticker)
         // 强反馈，确认真的加上了
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    /// 选完图当背景：立刻生效
+    private func applyPickedImageAsBackground() {
+        guard let image = pickedImage else { return }
+        backgroundImage = image
+        pickedImage = nil
+        // 背景刚设置时给一个能看见的透明度，避免用户以为没生效
+        if backgroundOpacity < 0.2 {
+            backgroundOpacity = 0.5
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     /// 选完图后：替换指定键位的图标；没有目标就新建一个图标键位

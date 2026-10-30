@@ -72,16 +72,18 @@ struct StickerLayer: View {
 
     // MARK: - 背景
 
+    /// 背景图直接铺满整层。注意这里别加 zIndex，否则会被同层贴纸压到下面。
     @ViewBuilder
     private func backgroundLayer(size: CGSize) -> some View {
-        if let image = backgroundImage {
+        if let image = backgroundImage, backgroundOpacity > 0.01 {
             Image(uiImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .frame(width: size.width, height: size.height)
+                .frame(width: max(size.width, 1), height: max(size.height, 1))
                 .clipped()
                 .opacity(backgroundOpacity)
                 .allowsHitTesting(false)
+                .zIndex(-1)
         }
     }
 
@@ -168,63 +170,76 @@ private struct StickerView: View {
 
     var body: some View {
         ZStack {
-            if sticker.style == .icon, let icon = StickerIconStore.load(sticker.iconFileName) {
-                // 图标键位：图片撑满圆圈，外圈描边保证在亮背景上也看得清
-                Image(uiImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: diameter, height: diameter)
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle().strokeBorder(
-                            color.opacity(isSelected ? 1.0 : 0.85),
-                            lineWidth: isSelected ? 2.5 : 1.5
+            // 圆本体：只负责显示与拖动
+            ZStack {
+                if sticker.style == .icon, let icon = StickerIconStore.load(sticker.iconFileName) {
+                    // 图标键位：图片撑满圆圈，外圈描边保证在亮背景上也看得清
+                    Image(uiImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: diameter, height: diameter)
+                        .clipShape(Circle())
+                        .overlay(
+                            Circle().strokeBorder(
+                                color.opacity(isSelected ? 1.0 : 0.85),
+                                lineWidth: isSelected ? 2.5 : 1.5
+                            )
                         )
-                    )
-            } else {
-                Circle()
-                    .fill(color.opacity(0.22))
-                    .overlay(
-                        Circle().strokeBorder(
-                            color.opacity(isSelected ? 1.0 : 0.85),
-                            lineWidth: isSelected ? 2.5 : 1.5
+                } else {
+                    Circle()
+                        .fill(color.opacity(0.22))
+                        .overlay(
+                            Circle().strokeBorder(
+                                color.opacity(isSelected ? 1.0 : 0.85),
+                                lineWidth: isSelected ? 2.5 : 1.5
+                            )
                         )
-                    )
 
-                Text(sticker.text)
-                    .font(.system(size: max(9, diameter * 0.2), weight: .semibold))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 4)
-                    .frame(width: diameter * 0.85)
+                    Text(sticker.text)
+                        .font(.system(size: max(9, diameter * 0.2), weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 4)
+                        .frame(width: diameter * 0.85)
+                }
             }
-
-            if isEditing {
-                deleteBadge
-            }
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
+            .gesture(dragGesture)
+            .simultaneousGesture(magnifyGesture)
         }
-        .frame(width: diameter, height: diameter)
+        // 关键：外框要留出删除徽标溢出的那部分，否则按钮在 frame 之外收不到点击
+        .frame(width: diameter + badgeSize, height: diameter + badgeSize)
         .opacity(sticker.opacity)
         .position(position)
-        .contentShape(Circle())
-        .gesture(dragGesture)
-        .simultaneousGesture(magnifyGesture)
         .allowsHitTesting(isEditing)
+        .overlay(alignment: .topTrailing) {
+            if isEditing {
+                deleteBadge
+                    .offset(x: 4, y: -4)
+            }
+        }
     }
 
+    private let badgeSize: CGFloat = 30
+
     private var deleteBadge: some View {
-        Circle()
-            .fill(Color.red)
-            .frame(width: 24, height: 24)
-            .overlay(
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.white)
-            )
-            .contentShape(Circle())
-            .highPriorityGesture(TapGesture().onEnded(onDelete))
-            .offset(x: diameter / 2 - 6, y: -diameter / 2 + 6)
+        Button(action: onDelete) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 26, height: 26)
+                .overlay(
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.white)
+                )
+                // 扩大命中区，手指略微偏一点也能点到
+                .contentShape(Rectangle().inset(by: -8))
+        }
+        .buttonStyle(.plain)
+        .frame(width: badgeSize, height: badgeSize)
+        .contentShape(Rectangle())
     }
 
     private var dragGesture: some Gesture {
