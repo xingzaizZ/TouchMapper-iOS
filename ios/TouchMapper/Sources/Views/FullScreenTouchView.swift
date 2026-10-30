@@ -20,6 +20,7 @@ struct FullScreenTouchView: View {
 
     @Binding var backgroundImage: UIImage?
     @Binding var backgroundOpacity: Double
+    @Binding var backgroundScale: Double
 
     @State private var showAddPanel = false
     @State private var showPresetSheet = false
@@ -90,6 +91,7 @@ struct FullScreenTouchView: View {
                     stickers: $stickers,
                     backgroundImage: $backgroundImage,
                     backgroundOpacity: $backgroundOpacity,
+                    backgroundScale: $backgroundScale,
                     selectedId: $selectedStickerId,
                     isEditing: isEditingStickers
                 )
@@ -208,12 +210,32 @@ struct FullScreenTouchView: View {
                         .foregroundStyle(Color.white.opacity(0.8))
 
                     Slider(value: $backgroundOpacity, in: 0.05...1.0)
-                        .frame(maxWidth: 200)
+                        .frame(maxWidth: 150)
 
                     Text("\(Int(backgroundOpacity * 100))%")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(Color.white.opacity(0.8))
-                        .frame(width: 38, alignment: .trailing)
+                        .frame(width: 34, alignment: .trailing)
+
+                    Text("缩放")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.white.opacity(0.7))
+
+                    Slider(value: $backgroundScale, in: 0.5...2.0)
+                        .frame(maxWidth: 150)
+
+                    Text("\(Int(backgroundScale * 100))%")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .frame(width: 34, alignment: .trailing)
+
+                    Button {
+                        backgroundScale = 1.0
+                    } label: {
+                        Text("适配")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
 
                     Button {
                         backgroundImage = nil

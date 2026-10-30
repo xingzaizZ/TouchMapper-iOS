@@ -17,9 +17,10 @@ struct TouchMapperApp: App {
     @State private var isEditingStickers = false
     @State private var isFullScreen = false
 
-    /// 键位参考背景图（用来对着电脑画面摆按钮），以及不透明度
+    /// 键位参考背景图（用来对着电脑画面摆按钮），以及不透明度、缩放
     @State private var backgroundImage: UIImage? = LayoutSticker.loadBackgroundImage()
     @State private var backgroundOpacity: Double = LayoutSticker.loadBackgroundOpacity()
+    @State private var backgroundScale: Double = LayoutSticker.loadBackgroundScale()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -41,7 +42,8 @@ struct TouchMapperApp: App {
                         isEditingStickers: $isEditingStickers,
                         isPresented: $isFullScreen,
                         backgroundImage: $backgroundImage,
-                        backgroundOpacity: $backgroundOpacity
+                        backgroundOpacity: $backgroundOpacity,
+                        backgroundScale: $backgroundScale
                     )
                     .transition(.opacity)
                     .zIndex(1)
@@ -53,6 +55,9 @@ struct TouchMapperApp: App {
             }
             .onChange(of: backgroundOpacity) { newValue in
                 LayoutSticker.saveBackgroundOpacity(newValue)
+            }
+            .onChange(of: backgroundScale) { newValue in
+                LayoutSticker.saveBackgroundScale(newValue)
             }
             .onChange(of: backgroundImage) { newValue in
                 LayoutSticker.saveBackgroundImage(newValue)
@@ -75,6 +80,7 @@ extension LayoutSticker {
     private static let stickersKey = "touchmapper.stickers"
     private static let backgroundKey = "touchmapper.background"
     private static let backgroundOpacityKey = "touchmapper.backgroundOpacity"
+    private static let backgroundScaleKey = "touchmapper.backgroundScale"
     private static let backgroundFile = "background.png"
 
     /// 首启默认布局
@@ -144,5 +150,14 @@ extension LayoutSticker {
 
     static func saveBackgroundOpacity(_ value: Double) {
         UserDefaults.standard.set(value, forKey: backgroundOpacityKey)
+    }
+
+    static func loadBackgroundScale() -> Double {
+        let value = UserDefaults.standard.object(forKey: backgroundScaleKey) as? Double
+        return value ?? 1.0
+    }
+
+    static func saveBackgroundScale(_ value: Double) {
+        UserDefaults.standard.set(value, forKey: backgroundScaleKey)
     }
 }
