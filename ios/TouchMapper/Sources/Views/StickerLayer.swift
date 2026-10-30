@@ -4,14 +4,11 @@
 //
 //  贴纸层：拖动 / 缩放 / 改字 / 删除 + 背景图。
 //
-//  性能要点（上一版卡顿的原因）：
-//    旧实现只有 DragGesture.onEnded 才真正改 state，onChanged 只做标记，
-//    拖动过程中什么都没发生，抬手瞬间一次性跳位 → 视觉上就是"卡一下"。
-//    现在 onChanged 每帧直接写 draft 位置，拖动全程跟手。
-//
-//  为什么不再用 @Binding 数组逐项绑定：
-//    拖动时会同时触发父视图整棵重绘（每条 ForEach 的 Binding 都失效），
-//    贴纸一多就掉帧。改为传值 + 闭包回写，只在抬手时回写一次。
+//  性能设计（这是修卡死的关键）：
+//    拖动全程不碰父视图的 @State / @Binding。
+//    每个贴纸自己用 @GestureState 记录实时位移，手势结束时才回写一次坐标。
+//    父层的 stickers 数组在整个拖动过程中一次都不变，也就不会触发 ForEach 重建，
+//    不会掉帧，更不会把主线程卡住。
 //
 
 import SwiftUI
@@ -27,8 +24,7 @@ struct StickerLayer: View {
 
     let isEditing: Bool
 
-    @State private var draggingId: UUID?
-    @State private var dragDraft: CGPoint?
+    @State private var editingTarget: LayoutSticker?
 
     var body: some View {
         GeometryReader { proxy in
@@ -44,15 +40,14 @@ struct StickerLayer: View {
                         shortSide: shortSide,
                         isEditing: isEditing,
                         isSelected: selectedId == sticker.id,
-                        position: position(for: sticker, container: size),
+                        containerSize: size,
                         onDelete: { remove(sticker.id) },
                         onEditText: { editingTarget = sticker },
                         onSelect: { selectedId = sticker.id },
-                        onDragChanged: { translation in handleDragChanged(translation, sticker, size) },
-                        onDragEnded: { translation in handleDragEnded(translation, sticker, size) },
-                        onMagnify: { delta in handleMagnify(delta, sticker) }
+                        onCommitDrag: { newX, newY in commitPosition(newX, newY, id: sticker.id) },
+                        onCommitSize: { newRatio in commitSize(newRatio, id: sticker.id) }
                     )
-                    .zIndex(draggingId == sticker.id ? 10 : (selectedId == sticker.id ? 5 : 0))
+                    .zIndex(selectedId == sticker.id ? 5 : 0)
                 }
             }
             .frame(width: size.width, height: size.height)
@@ -68,11 +63,8 @@ struct StickerLayer: View {
         }
     }
 
-    @State private var editingTarget: LayoutSticker?
-
     // MARK: - 背景
 
-    /// 背景图直接铺满整层。注意这里别加 zIndex，否则会被同层贴纸压到下面。
     @ViewBuilder
     private func backgroundLayer(size: CGSize) -> some View {
         if let image = backgroundImage, backgroundOpacity > 0.01 {
@@ -87,48 +79,19 @@ struct StickerLayer: View {
         }
     }
 
-    // MARK: - 位置
+    // MARK: - 回写
 
-    private func position(for sticker: LayoutSticker, container: CGSize) -> CGPoint {
-        if draggingId == sticker.id, let draft = dragDraft {
-            return CGPoint(x: draft.x * container.width, y: draft.y * container.height)
-        }
-        return CGPoint(x: sticker.centerX * container.width, y: sticker.centerY * container.height)
+    private func commitPosition(_ x: Double, _ y: Double, id: UUID) {
+        guard let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].centerX = min(max(x, 0.02), 0.98)
+        stickers[idx].centerY = min(max(y, 0.02), 0.98)
     }
 
-    private func handleDragChanged(_ translation: CGSize, _ sticker: LayoutSticker, _ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
-
-        if draggingId != sticker.id {
-            draggingId = sticker.id
-        }
-
-        let baseX = sticker.centerX
-        let baseY = sticker.centerY
-        let nx = min(max(baseX + Double(translation.width / size.width), 0.02), 0.98)
-        let ny = min(max(baseY + Double(translation.height / size.height), 0.02), 0.98)
-        dragDraft = CGPoint(x: nx, y: ny)
-    }
-
-    private func handleDragEnded(_ translation: CGSize, _ sticker: LayoutSticker, _ size: CGSize) {
-        defer {
-            draggingId = nil
-            dragDraft = nil
-        }
-        guard size.width > 0, size.height > 0,
-              let idx = stickers.firstIndex(where: { $0.id == sticker.id }) else { return }
-
-        let nx = min(max(sticker.centerX + Double(translation.width / size.width), 0.02), 0.98)
-        let ny = min(max(sticker.centerY + Double(translation.height / size.height), 0.02), 0.98)
-        stickers[idx].centerX = nx
-        stickers[idx].centerY = ny
-    }
-
-    private func handleMagnify(_ delta: CGFloat, _ sticker: LayoutSticker) {
-        guard let idx = stickers.firstIndex(where: { $0.id == sticker.id }) else { return }
-        // MagnificationGesture 给的是"相对手势起点的累计倍数"，用增量更稳
-        let target = stickers[idx].diameterRatio * Double(delta)
-        stickers[idx].diameterRatio = min(max(target, 0.05), 0.7)
+    private func commitSize(_ ratio: Double, id: UUID) {
+        guard let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].diameterRatio = min(max(ratio,
+                                              LayoutSticker.diameterRange.lowerBound),
+                                          LayoutSticker.diameterRange.upperBound)
     }
 
     private func updateText(_ text: String, for id: UUID) {
@@ -138,10 +101,7 @@ struct StickerLayer: View {
 
     private func remove(_ id: UUID) {
         stickers.removeAll { $0.id == id }
-        if draggingId == id {
-            draggingId = nil
-            dragDraft = nil
-        }
+        if selectedId == id { selectedId = nil }
     }
 }
 
@@ -153,53 +113,75 @@ private struct StickerView: View {
     let shortSide: CGFloat
     let isEditing: Bool
     let isSelected: Bool
-    let position: CGPoint
+    let containerSize: CGSize
 
     let onDelete: () -> Void
     let onEditText: () -> Void
     let onSelect: () -> Void
-    let onDragChanged: (CGSize) -> Void
-    let onDragEnded: (CGSize) -> Void
-    let onMagnify: (CGFloat) -> Void
+    let onCommitDrag: (Double, Double) -> Void
+    let onCommitSize: (Double) -> Void
 
-    @State private var lastMagnify: CGFloat = 1
+    /// 拖动中的实时位移（手势结束自动归零，不进父状态）
+    @GestureState private var dragTranslation: CGSize = .zero
+    /// 捏合中的缩放倍数
+    @GestureState private var pinchScale: CGFloat = 1
+
+    private var baseDiameter: CGFloat {
+        max(22, shortSide * CGFloat(sticker.diameterRatio))
+    }
 
     private var diameter: CGFloat {
-        max(22, shortSide * CGFloat(sticker.diameterRatio))
+        max(22, baseDiameter * pinchScale)
     }
 
     private var cornerRadius: CGFloat {
         sticker.shape == .circle ? diameter / 2 : diameter * 0.16
     }
 
-    /// 外形裁剪路径：圆形用 Circle，方形用圆角矩形
-    @ViewBuilder
-    private var shapePath: some View {
-        if sticker.shape == .circle {
-            Circle().strokeBorder(
-                color.opacity(isSelected ? 1.0 : 0.85),
-                lineWidth: isSelected ? 2.5 : 1.5
-            )
-        } else {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    color.opacity(isSelected ? 1.0 : 0.85),
-                    lineWidth: isSelected ? 2.5 : 1.5
-                )
-        }
+    private var currentPosition: CGPoint {
+        CGPoint(x: CGFloat(sticker.centerX) * containerSize.width + dragTranslation.width,
+                y: CGFloat(sticker.centerY) * containerSize.height + dragTranslation.height)
+    }
+
+    var body: some View {
+        content
+            .frame(width: diameter, height: diameter)
+            .contentShape(Rectangle())
+            .position(currentPosition)
+            .opacity(sticker.opacity)
+            .gesture(isEditing ? dragGesture : nil)
+            .simultaneousGesture(isEditing ? pinchGesture : nil)
+            .overlay(alignment: .topTrailing) {
+                // 删除徽标固定在圆形/方形右上角，始终在贴纸范围内，保证可点
+                if isEditing {
+                    deleteButton
+                        .offset(x: -2, y: 2)
+                }
+            }
+            .allowsHitTesting(isEditing)
     }
 
     @ViewBuilder
-    private var shapeFill: some View {
-        if sticker.shape == .circle {
-            Circle().fill(color.opacity(0.22))
+    private var content: some View {
+        if sticker.style == .icon, let icon = StickerIconStore.load(sticker.iconFileName) {
+            iconImage(icon)
+                .overlay(shapeStroke)
         } else {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(color.opacity(0.22))
+            shapeFill
+                .frame(width: diameter, height: diameter)
+                .overlay(shapeStroke)
+
+            Text(sticker.text)
+                .font(.system(size: max(9, diameter * 0.2), weight: .semibold))
+                .foregroundStyle(Color.white)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 4)
+                .frame(width: diameter * 0.85)
         }
     }
 
-    /// 图标按形状裁剪（iOS 15 没有 AnyShape，用分支实现）
+    /// 图标按形状裁剪（iOS 15 无 AnyShape，用分支实现）
     @ViewBuilder
     private func iconImage(_ image: UIImage) -> some View {
         if sticker.shape == .circle {
@@ -217,99 +199,77 @@ private struct StickerView: View {
         }
     }
 
-    var body: some View {
-        ZStack {
-            // 键位本体：只负责显示与拖动
-            ZStack {
-                if sticker.style == .icon, let icon = StickerIconStore.load(sticker.iconFileName) {
-                    // 图标键位：图片按形状裁剪，外圈描边保证在亮背景上也看得清
-                    iconImage(icon)
-                        .overlay(shapePath)
-                } else {
-                    shapeFill
-                        .frame(width: diameter, height: diameter)
-                        .overlay(shapePath)
+    // MARK: - 形状
 
-                    Text(sticker.text)
-                        .font(.system(size: max(9, diameter * 0.2), weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 4)
-                        .frame(width: diameter * 0.85)
-                }
-            }
-            .frame(width: diameter, height: diameter)
-            .contentShape(Rectangle())
-            .gesture(dragGesture)
-            .simultaneousGesture(magnifyGesture)
-        }
-        // 关键：外框要留出删除徽标溢出的那部分，否则按钮在 frame 之外收不到点击
-        .frame(width: diameter + badgeSize, height: diameter + badgeSize)
-        .opacity(sticker.opacity)
-        .position(position)
-        .allowsHitTesting(isEditing)
-        .overlay(alignment: .topTrailing) {
-            if isEditing {
-                deleteBadge
-                    .offset(x: 4, y: -4)
-            }
+    @ViewBuilder
+    private var shapeFill: some View {
+        if sticker.shape == .circle {
+            Circle().fill(color.opacity(0.22))
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(color.opacity(0.22))
         }
     }
 
-    private let badgeSize: CGFloat = 30
+    @ViewBuilder
+    private var shapeStroke: some View {
+        if sticker.shape == .circle {
+            Circle().strokeBorder(color.opacity(isSelected ? 1.0 : 0.85),
+                                  lineWidth: isSelected ? 2.5 : 1.5)
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(color.opacity(isSelected ? 1.0 : 0.85),
+                              lineWidth: isSelected ? 2.5 : 1.5)
+        }
+    }
 
-    private var deleteBadge: some View {
+    // MARK: - 删除
+
+    private var deleteButton: some View {
         Button(action: onDelete) {
-            Circle()
-                .fill(Color.red)
-                .frame(width: 26, height: 26)
-                .overlay(
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.white)
-                )
-                // 扩大命中区，手指略微偏一点也能点到
-                .contentShape(Rectangle().inset(by: -8))
+            ZStack {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 22, height: 22)
+                    .overlay(
+                        Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
+                    )
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.white)
+            }
+            // 命中区比视觉大一圈，好点
+            .contentShape(Circle().inset(by: -10))
         }
-        .buttonStyle(.plain)
-        .frame(width: badgeSize, height: badgeSize)
-        .contentShape(Rectangle())
+        .buttonStyle(.borderless)
     }
+
+    // MARK: - 手势
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                guard isEditing else { return }
-                // 手指几乎没动就是点击，交给 tap 处理，避免误拖
-                let moved = abs(value.translation.width) + abs(value.translation.height)
-                if moved < 6 { return }
-                onSelect()
-                onDragChanged(value.translation)
+        DragGesture(minimumDistance: 4)
+            .updating($dragTranslation) { value, state, _ in
+                // 只更新本地 GestureState，不触碰父层 @Binding，拖动全程零重绘
+                state = value.translation
+            }
+            .onChanged { _ in
+                if !isSelected { onSelect() }
             }
             .onEnded { value in
-                guard isEditing else { return }
-                let moved = abs(value.translation.width) + abs(value.translation.height)
-                if moved < 6 {
-                    // 轻点 = 选中（供滑杆调整），同时进入改字
-                    onSelect()
-                    onEditText()
-                } else {
-                    onDragEnded(value.translation)
-                }
+                guard containerSize.width > 0, containerSize.height > 0 else { return }
+                let nx = sticker.centerX + Double(value.translation.width / containerSize.width)
+                let ny = sticker.centerY + Double(value.translation.height / containerSize.height)
+                onCommitDrag(nx, ny)
             }
     }
 
-    private var magnifyGesture: some Gesture {
+    private var pinchGesture: some Gesture {
         MagnificationGesture()
-            .onChanged { value in
-                guard isEditing else { return }
-                let delta = value / lastMagnify
-                lastMagnify = value
-                onMagnify(delta)
+            .updating($pinchScale) { value, state, _ in
+                state = value
             }
-            .onEnded { _ in
-                lastMagnify = 1
+            .onEnded { value in
+                onCommitSize(sticker.diameterRatio * Double(value))
             }
     }
 
