@@ -2,9 +2,11 @@
 //  FullScreenTouchView.swift
 //  TouchMapper iOS
 //
-//  全屏触控页：底层是能接 10 指多点触摸的 UIView，上面盖一层可选显示的贴纸提示。
-//  对齐 Android 端 FullScreenTouchPanel + FullTouchToolbar 的行为：
-//  贴纸只是位置提示，不触发触摸；实际触摸由手指在屏幕上的位置决定。
+//  全屏触控页。三种模式：
+//    · 浏览      —— 手指触摸直接发到电脑
+//    · 键位编辑  —— 只操作贴纸，触摸不发送
+//    · 背景编辑  —— 只调背景的透明度/横向/纵向缩放，贴纸不响应
+//  分开做是为了避免两套滑杆 + 手势同时抢事件、同时触发重绘导致卡死。
 //
 
 import SwiftUI
@@ -18,21 +20,47 @@ struct FullScreenTouchView: View {
     @Binding var isEditingStickers: Bool
     @Binding var isPresented: Bool
 
-    @Binding var backgroundImage: UIImage?
-    @Binding var backgroundOpacity: Double
-    @Binding var backgroundScaleX: Double
-    @Binding var backgroundScaleY: Double
+    /// 背景参数（独立发布源，避免滑杆拖动导致整页重绘卡死）
+    @ObservedObject var background: BackgroundModel
+
+    /// 当前编辑目标
+    enum EditTarget: String, CaseIterable {
+        case browse
+        case stickers
+        case background
+
+        var displayName: String {
+            switch self {
+            case .browse:     return "浏览"
+            case .stickers:   return "键位"
+            case .background: return "背景"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .browse:     return "hand.point.up.left"
+            case .stickers:   return "square.grid.3x3"
+            case .background: return "photo"
+            }
+        }
+    }
+
+    @State private var editTarget: EditTarget = .browse
 
     @State private var showAddPanel = false
     @State private var showPresetSheet = false
     @State private var showImagePicker = false
     @State private var pickedImage: UIImage?
-    /// 非 nil 表示这次选图是替换某个键位的图标
     @State private var pendingIconTarget: UUID?
-    /// true 表示这次选图一定当键位图标（点「图标」按钮进来的）
     @State private var wantsIconOnly = false
-    /// 当前选中的贴纸 id，两个滑杆作用在它身上
     @State private var selectedStickerId: UUID?
+
+    /// sheet 关闭动画期间锁住，避免连续 present 卡死
+    @State private var isSheetClosing = false
+
+    /// 只有浏览模式才发触摸
+    private var isSendingTouch: Bool { editTarget == .browse }
 
     var body: some View {
         GeometryReader { proxy in
@@ -40,10 +68,9 @@ struct FullScreenTouchView: View {
                 Color.black
                     .ignoresSafeArea()
 
-                // 触摸层必须铺满并且放在最底下；贴纸层只做视觉提示
                 MultiTouchCaptureView(
                     onTouchBegan: { id, point in
-                        guard !isEditingStickers else { return }
+                        guard isSendingTouch else { return }
                         session.updateContentSize(proxy.size)
                         session.beginContact(id: id, at: point)
                         let p = session.normalized(point)
@@ -54,7 +81,7 @@ struct FullScreenTouchView: View {
                                         screenHeight: session.pixelHeight)
                     },
                     onTouchMoved: { id, point in
-                        guard !isEditingStickers else { return }
+                        guard isSendingTouch else { return }
                         session.moveContact(id: id, to: point)
                         let p = session.normalized(point)
                         connection.send(phase: .move,
@@ -64,7 +91,7 @@ struct FullScreenTouchView: View {
                                         screenHeight: session.pixelHeight)
                     },
                     onTouchEnded: { id, point in
-                        guard !isEditingStickers else { return }
+                        guard isSendingTouch else { return }
                         let p = session.normalized(point)
                         connection.send(phase: .up,
                                         x: Float(p.x), y: Float(p.y),
@@ -90,19 +117,19 @@ struct FullScreenTouchView: View {
 
                 StickerLayer(
                     stickers: $stickers,
-                    backgroundImage: $backgroundImage,
-                    backgroundOpacity: $backgroundOpacity,
-                    backgroundScaleX: $backgroundScaleX,
-                    backgroundScaleY: $backgroundScaleY,
+                    background: background,
                     selectedId: $selectedStickerId,
-                    isEditing: isEditingStickers
+                    isEditing: editTarget == .stickers
                 )
                 .ignoresSafeArea()
 
                 VStack(spacing: 8) {
                     toolbar
-                    if isEditingStickers {
-                        addPanel
+                    if editTarget == .stickers {
+                        stickerPanel
+                    }
+                    if editTarget == .background {
+                        backgroundPanel
                     }
                     Spacer()
                 }
@@ -111,23 +138,28 @@ struct FullScreenTouchView: View {
             }
         }
         .statusBarHidden(true)
-        .onDisappear {
-            releaseEverything()
+        .onAppear {
+            syncExternalEditFlag()
         }
-        .sheet(isPresented: $showPresetSheet) {
+        .onDisappear {
+            releaseTouches()
+        }
+        .sheet(isPresented: $showPresetSheet, onDismiss: {
+            isSheetClosing = false
+        }) {
             PresetSheet(stickers: $stickers)
         }
-        .sheet(isPresented: $showImagePicker) {
+        .sheet(isPresented: $showImagePicker, onDismiss: {
+            isSheetClosing = false
+        }) {
             ImagePicker(
                 image: $pickedImage,
                 onPicked: {
-                    // 用「图标」按钮进来的，直接当键位图标，不再问用途
                     if pendingIconTarget != nil || wantsIconOnly {
                         applyPickedImageAsIcon()
                         wantsIconOnly = false
                         pickedImage = nil
                     } else {
-                        // 选完背景图：直接生效，别再弹二次确认（sheet 关闭动画期间弹 dialog 会吞点击）
                         applyPickedImageAsBackground()
                     }
                 },
@@ -140,238 +172,10 @@ struct FullScreenTouchView: View {
         }
     }
 
-    // MARK: - 添加面板（内嵌，不用 actionSheet，sheet 弹着时 actionSheet 会失效）
-
-    private var addPanel: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                if showAddPanel {
-                    ForEach(LayoutSticker.Kind.allCases, id: \.self) { kind in
-                        Button {
-                            addSticker(kind, style: .text)
-                        } label: {
-                            Text(kind.displayName)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Color.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 9)
-                                .background(
-                                    Capsule().fill(kind.tint.opacity(0.55))
-                                )
-                        }
-                    }
-
-                    // 图标键位：选图后询问用途，这里直接进入选图并标记为图标
-                    Button {
-                        pendingIconTarget = nil
-                        wantsIconOnly = true
-                        showImagePicker = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "photo.circle.fill")
-                            Text("图标")
-                        }
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(Capsule().fill(Color.purple.opacity(0.6)))
-                    }
-
-                    Button {
-                        showAddPanel = false
-                    } label: {
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.white)
-                            .padding(9)
-                            .background(Circle().fill(Color.black.opacity(0.45)))
-                    }
-                } else {
-                    Button {
-                        showAddPanel = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "plus.circle.fill")
-                            Text("添加按键")
-                        }
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(Capsule().fill(Color.black.opacity(0.45)))
-                    }
-                }
-                Spacer()
-            }
-
-            if backgroundImage != nil {
-                VStack(spacing: 6) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.white.opacity(0.8))
-
-                        Slider(value: $backgroundOpacity, in: 0.05...1.0)
-                            .frame(maxWidth: 120)
-
-                        Text("\(Int(backgroundOpacity * 100))%")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.8))
-                            .frame(width: 34, alignment: .trailing)
-
-                        Button {
-                            resetBackgroundTransform()
-                        } label: {
-                            Text("适配")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.white.opacity(0.85))
-                        }
-
-                        Button {
-                            fillBackgroundToScreen()
-                        } label: {
-                            Text("铺满")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.white.opacity(0.85))
-                        }
-
-                        Button {
-                            backgroundImage = nil
-                        } label: {
-                            Text("移除")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.red.opacity(0.9))
-                        }
-
-                        Spacer()
-                    }
-
-                    // 横向 / 纵向 独立缩放（可不等比拉伸）
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.left.and.right")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.white.opacity(0.7))
-                        Text("横向")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.white.opacity(0.7))
-
-                        Slider(value: $backgroundScaleX, in: 0.3...3.0)
-                            .frame(maxWidth: 130)
-
-                        Text("\(Int(backgroundScaleX * 100))%")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.8))
-                            .frame(width: 40, alignment: .trailing)
-
-                        Image(systemName: "arrow.up.and.down")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.white.opacity(0.7))
-                        Text("纵向")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.white.opacity(0.7))
-
-                        Slider(value: $backgroundScaleY, in: 0.3...3.0)
-                            .frame(maxWidth: 130)
-
-                        Text("\(Int(backgroundScaleY * 100))%")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.8))
-                            .frame(width: 40, alignment: .trailing)
-
-                        Spacer()
-                    }
-                }
-            }
-
-            // 选中贴纸后出现：大小 / 不透明度 两条滑杆 + 换图标 / 切回文字
-            if let selected = selectedSticker {
-                HStack(spacing: 10) {
-                    Text(selected.style == .icon ? "图标" : selected.text)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(selected.kind.tint)
-                        .frame(width: 44, alignment: .leading)
-                        .lineLimit(1)
-
-                    Button {
-                        // 选中某个键位后再导图，直接替换它的图标
-                        pendingIconTarget = selected.id
-                        wantsIconOnly = true
-                        showImagePicker = true
-                    } label: {
-                        Image(systemName: "photo.circle")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.white.opacity(0.85))
-                    }
-
-                    Button {
-                        toggleSelectedStyle()
-                    } label: {
-                        Image(systemName: selected.style == .icon ? "textformat" : "photo")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.white.opacity(0.85))
-                    }
-
-                    // 圆形 / 方形 切换
-                    Button {
-                        toggleSelectedShape()
-                    } label: {
-                        Image(systemName: selected.shape == .circle ? "circle" : "square")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.white.opacity(0.85))
-                    }
-
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.7))
-                    Slider(value: Binding(
-                        get: { selected.diameterRatio },
-                        set: { newValue in updateSelectedDiameter(newValue) }
-                    ), in: LayoutSticker.diameterRange)
-                    .frame(maxWidth: 140)
-
-                    Image(systemName: "circle.lefthalf.filled")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.7))
-                    Slider(value: Binding(
-                        get: { selected.opacity },
-                        set: { newValue in updateSelectedOpacity(newValue) }
-                    ), in: LayoutSticker.opacityRange)
-                    .frame(maxWidth: 140)
-
-                    Button {
-                        selectedStickerId = nil
-                    } label: {
-                        Text("取消选中")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.white.opacity(0.7))
-                    }
-
-                    Spacer()
-                }
-            } else if isEditingStickers {
-                HStack(spacing: 6) {
-                    Image(systemName: "hand.tap")
-                        .font(.system(size: 11))
-                    Text("轻点一个按键，即可用滑杆调它的大小和透明度")
-                        .font(.system(size: 11))
-                }
-                .foregroundStyle(Color.white.opacity(0.6))
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.black.opacity(0.45))
-        )
-        .transition(.opacity.combined(with: .move(edge: .top)))
-    }
-
     // MARK: - 顶部工具栏
 
     private var toolbar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Button {
                 exitFullScreen()
             } label: {
@@ -389,38 +193,10 @@ struct FullScreenTouchView: View {
 
             Spacer()
 
-            if isEditingStickers {
-                Button {
-                    // 工具栏这颗按钮：选完图后由用户决定当背景还是当键位图标
-                    pendingIconTarget = nil
-                    wantsIconOnly = false
-                    showImagePicker = true
-                } label: {
-                    Image(systemName: "photo.on.rectangle")
-                        .font(.title3)
-                        .foregroundStyle(backgroundImage == nil ? Color.white : Color.green)
-                }
-
-                Button {
-                    showPresetSheet = true
-                } label: {
-                    Image(systemName: "square.grid.2x2")
-                        .font(.title3)
-                        .foregroundStyle(Color.white)
-                }
-            }
-
-            Toggle(isOn: $isEditingStickers) {
-                Text("编辑").font(.caption)
-            }
-            .fixedSize()
-
-            Text(isEditingStickers ? "编辑中" : "只读")
-                .font(.caption)
-                .foregroundStyle(Color.white.opacity(0.7))
+            modeSegment
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.black.opacity(0.45))
@@ -428,20 +204,332 @@ struct FullScreenTouchView: View {
         .foregroundStyle(Color.white)
     }
 
+    /// 浏览 / 键位 / 背景 三段式切换
+    private var modeSegment: some View {
+        HStack(spacing: 0) {
+            ForEach(EditTarget.allCases, id: \.self) { target in
+                Button {
+                    switchTo(target)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: target.icon)
+                            .font(.system(size: 11))
+                        Text(target.displayName)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(editTarget == target
+                                  ? Color(red: 0.42, green: 0.60, blue: 0.98)
+                                  : Color.clear)
+                    )
+                    .foregroundStyle(editTarget == target ? Color.white : Color.white.opacity(0.75))
+                }
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Color.black.opacity(0.35))
+        )
+    }
+
     private var statusBadge: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Circle()
                 .fill(connection.status.isConnected ? Color.green : Color.red)
-                .frame(width: 7, height: 7)
+                .frame(width: 6, height: 6)
             Text(connection.status.isConnected ? "已连接" : "未连接")
-                .font(.caption)
+                .font(.system(size: 11))
                 .foregroundStyle(Color.white.opacity(0.85))
         }
     }
 
-    // MARK: - 动作
+    // MARK: - 键位面板
 
-    /// 当前选中的贴纸（滑杆作用对象）
+    private var stickerPanel: some View {
+        VStack(spacing: 7) {
+            HStack(spacing: 8) {
+                Button {
+                    pendingIconTarget = nil
+                    wantsIconOnly = false
+                    openImagePicker()
+                } label: {
+                    panelLabel("导入图片", icon: "photo.on.rectangle",
+                               active: background.image != nil)
+                }
+
+                Button {
+                    openPresetSheet()
+                } label: {
+                    panelLabel("预设", icon: "square.grid.2x2", active: false)
+                }
+
+                if showAddPanel {
+                    ForEach(LayoutSticker.Kind.allCases, id: \.self) { kind in
+                        Button {
+                            addSticker(kind, style: .text)
+                        } label: {
+                            Text(kind.displayName)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(kind.tint.opacity(0.6)))
+                        }
+                    }
+
+                    Button {
+                        pendingIconTarget = nil
+                        wantsIconOnly = true
+                        openImagePicker()
+                    } label: {
+                        Text("图标")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color.purple.opacity(0.65)))
+                    }
+
+                    Button {
+                        showAddPanel = false
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .padding(6)
+                            .background(Circle().fill(Color.black.opacity(0.45)))
+                    }
+                } else {
+                    Button {
+                        showAddPanel = true
+                    } label: {
+                        panelLabel("添加键位", icon: "plus.circle.fill", active: false)
+                    }
+                }
+
+                Spacer()
+            }
+
+            if let selected = selectedSticker {
+                HStack(spacing: 9) {
+                    Text(selected.style == .icon ? "图标" : selected.text)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(selected.kind.tint)
+                        .frame(width: 42, alignment: .leading)
+                        .lineLimit(1)
+
+                    Button {
+                        pendingIconTarget = selected.id
+                        wantsIconOnly = true
+                        openImagePicker()
+                    } label: {
+                        Image(systemName: "photo.circle")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+
+                    Button {
+                        toggleSelectedStyle()
+                    } label: {
+                        Image(systemName: selected.style == .icon ? "textformat" : "photo")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+
+                    Button {
+                        toggleSelectedShape()
+                    } label: {
+                        Image(systemName: selected.shape == .circle ? "circle" : "square")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.white.opacity(0.65))
+                    Slider(value: Binding(
+                        get: { selected.diameterRatio },
+                        set: { updateSelectedDiameter($0) }
+                    ), in: LayoutSticker.diameterRange)
+                    .frame(maxWidth: 120)
+
+                    Image(systemName: "circle.lefthalf.filled")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.white.opacity(0.65))
+                    Slider(value: Binding(
+                        get: { selected.opacity },
+                        set: { updateSelectedOpacity($0) }
+                    ), in: LayoutSticker.opacityRange)
+                    .frame(maxWidth: 120)
+
+                    Button {
+                        selectedStickerId = nil
+                    } label: {
+                        Text("取消")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.7))
+                    }
+
+                    Spacer()
+                }
+            } else {
+                HStack(spacing: 5) {
+                    Image(systemName: "hand.tap")
+                        .font(.system(size: 10))
+                    Text("轻点一个键位，即可调它的大小和透明度")
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(Color.white.opacity(0.6))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color.black.opacity(0.45))
+        )
+    }
+
+    // MARK: - 背景面板（独立，不和键位同时出现）
+
+    private var backgroundPanel: some View {
+        VStack(spacing: 7) {
+            if background.image == nil {
+                HStack(spacing: 8) {
+                    Button {
+                        pendingIconTarget = nil
+                        wantsIconOnly = false
+                        openImagePicker()
+                    } label: {
+                        panelLabel("选择背景图", icon: "photo.badge.plus", active: false)
+                    }
+                    Spacer()
+                }
+            } else {
+                HStack(spacing: 9) {
+                    Image(systemName: "circle.lefthalf.filled")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.white.opacity(0.65))
+                    Slider(value: $background.opacity, in: 0.05...1.0)
+                        .frame(maxWidth: 110)
+                    Text("\(Int(background.opacity * 100))%")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .frame(width: 32, alignment: .trailing)
+
+                    Text("横向")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.white.opacity(0.65))
+                    Slider(value: $background.scaleX, in: 0.3...3.0)
+                        .frame(maxWidth: 110)
+                    Text("\(Int(background.scaleX * 100))%")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .frame(width: 36, alignment: .trailing)
+
+                    Text("纵向")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.white.opacity(0.65))
+                    Slider(value: $background.scaleY, in: 0.3...3.0)
+                        .frame(maxWidth: 110)
+                    Text("\(Int(background.scaleY * 100))%")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .frame(width: 36, alignment: .trailing)
+
+                    Button {
+                        resetBackgroundTransform()
+                    } label: {
+                        Text("适配")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+
+                    Button {
+                        fillBackgroundToScreen()
+                    } label: {
+                        Text("铺满")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+
+                    Button {
+                        background.setImage(nil)
+                    } label: {
+                        Text("移除")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.red.opacity(0.9))
+                    }
+
+                    Spacer()
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color.black.opacity(0.45))
+        )
+    }
+
+    private func panelLabel(_ title: String, icon: String, active: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundStyle(active ? Color.green : Color.white)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(Color.black.opacity(0.4)))
+    }
+
+    // MARK: - 模式切换
+
+    /// 统一的图片选择入口，关闭动画期间忽略
+    private func openImagePicker() {
+        guard !isSheetClosing, !showImagePicker else { return }
+        isSheetClosing = true
+        showImagePicker = true
+    }
+
+    /// 统一的预设面板入口
+    private func openPresetSheet() {
+        guard !isSheetClosing, !showPresetSheet else { return }
+        isSheetClosing = true
+        showPresetSheet = true
+    }
+
+    private func switchTo(_ target: EditTarget) {
+        guard target != editTarget else { return }
+
+        if editTarget == .stickers {
+            selectedStickerId = nil
+            showAddPanel = false
+        }
+
+        if target != .browse {
+            releaseTouches()
+        }
+
+        editTarget = target
+        isEditingStickers = (target == .stickers)
+    }
+
+    private func syncExternalEditFlag() {
+        if isEditingStickers, editTarget == .browse {
+            editTarget = .stickers
+        }
+    }
+
+    // MARK: - 选中贴纸
+
     private var selectedSticker: LayoutSticker? {
         guard let id = selectedStickerId else { return nil }
         return stickers.first { $0.id == id }
@@ -461,8 +549,9 @@ struct FullScreenTouchView: View {
                                     LayoutSticker.opacityRange.upperBound)
     }
 
+    // MARK: - 添加键位
+
     private func addSticker(_ kind: LayoutSticker.Kind, style: LayoutSticker.Style = .text) {
-        // 新贴纸放在画布中偏下的位置，按已有数量错开，避免完全重叠
         let index = stickers.count
         let column = index % 4
         let row = (index / 4) % 3
@@ -471,46 +560,23 @@ struct FullScreenTouchView: View {
                                     centerY: 0.70 - Double(row) * 0.11,
                                     style: style)
         stickers.append(sticker)
-        // 强反馈，确认真的加上了
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
-    /// 一键回到「等比完整适配」：横向纵向都 100%
-    private func resetBackgroundTransform() {
-        backgroundScaleX = 1.0
-        backgroundScaleY = 1.0
-    }
+    // MARK: - 图片用途
 
-    /// 一键铺满：按屏幕比例把背景放大到填满，横向纵向分别算
-    private func fillBackgroundToScreen() {
-        guard let image = backgroundImage else { return }
-        let screen = UIScreen.main.bounds.size
-        guard image.size.width > 0, image.size.height > 0,
-              screen.width > 0, screen.height > 0 else { return }
-
-        // 先算等比适配系数，再看要铺满屏幕各方向还得乘多少
-        let fit = min(screen.width / image.size.width,
-                      screen.height / image.size.height)
-        let fittedW = image.size.width * fit
-        let fittedH = image.size.height * fit
-
-        backgroundScaleX = min(max(Double(screen.width / fittedW), 0.3), 3.0)
-        backgroundScaleY = min(max(Double(screen.height / fittedH), 0.3), 3.0)
-    }
-
-    /// 选完图当背景：立刻生效
     private func applyPickedImageAsBackground() {
         guard let image = pickedImage else { return }
-        backgroundImage = image
+        background.setImage(image)
         pickedImage = nil
-        // 背景刚设置时给一个能看见的透明度，避免用户以为没生效
-        if backgroundOpacity < 0.2 {
-            backgroundOpacity = 0.5
+        if background.opacity < 0.2 {
+            background.opacity = 0.5
         }
+        editTarget = .background
+        isEditingStickers = false
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
-    /// 选完图后：替换指定键位的图标；没有目标就新建一个图标键位
     private func applyPickedImageAsIcon() {
         guard let image = pickedImage else { return }
         defer { pickedImage = nil }
@@ -525,7 +591,6 @@ struct FullScreenTouchView: View {
             return
         }
 
-        // 没有指定目标：新建一个图标键位
         let newId = UUID()
         let fileName = StickerIconStore.save(image, id: newId)
         let index = stickers.count
@@ -543,7 +608,6 @@ struct FullScreenTouchView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
-    /// 圆形 ↔ 方形 切换
     private func toggleSelectedShape() {
         guard let id = selectedStickerId,
               let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
@@ -551,27 +615,39 @@ struct FullScreenTouchView: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
-    /// 图标键位 ↔ 文字键位 切换
-    private func toggleSelectedStyle() {        guard let id = selectedStickerId,
+    private func toggleSelectedStyle() {
+        guard let id = selectedStickerId,
               let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
 
         if stickers[idx].style == .icon {
             stickers[idx].style = .text
-        } else if let fileName = stickers[idx].iconFileName {
+        } else if let fileName = stickers[idx].iconFileName, !fileName.isEmpty {
             stickers[idx].style = .icon
         } else {
-            // 还没有图标，进入选图流程
             pendingIconTarget = id
-            showImagePicker = true
+            wantsIconOnly = true
+            openImagePicker()
         }
     }
 
+    // MARK: - 背景变换
+
+    private func resetBackgroundTransform() {
+        background.resetToFit()
+    }
+
+    private func fillBackgroundToScreen() {
+        background.fillToScreen(UIScreen.main.bounds.size)
+    }
+
+    // MARK: - 退出
+
     private func exitFullScreen() {
-        releaseEverything()
+        releaseTouches()
         isPresented = false
     }
 
-    private func releaseEverything() {
+    private func releaseTouches() {
         let ids = Set(session.contacts.keys)
         connection.releaseAll(contactIds: ids,
                               screenWidth: session.pixelWidth,

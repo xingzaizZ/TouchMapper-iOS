@@ -18,10 +18,8 @@ struct TouchMapperApp: App {
     @State private var isFullScreen = false
 
     /// 键位参考背景图（用来对着电脑画面摆按钮），以及不透明度、缩放
-    @State private var backgroundImage: UIImage? = LayoutSticker.loadBackgroundImage()
-    @State private var backgroundOpacity: Double = LayoutSticker.loadBackgroundOpacity()
-    @State private var backgroundScaleX: Double = LayoutSticker.loadBackgroundScaleX()
-    @State private var backgroundScaleY: Double = LayoutSticker.loadBackgroundScaleY()
+    /// 背景参数集中管理，滑杆只改它，不触发本视图重绘
+    @StateObject private var background = BackgroundModel()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -42,10 +40,7 @@ struct TouchMapperApp: App {
                         stickers: $stickers,
                         isEditingStickers: $isEditingStickers,
                         isPresented: $isFullScreen,
-                        backgroundImage: $backgroundImage,
-                        backgroundOpacity: $backgroundOpacity,
-                        backgroundScaleX: $backgroundScaleX,
-                        backgroundScaleY: $backgroundScaleY
+                        background: background
                     )
                     .transition(.opacity)
                     .zIndex(1)
@@ -54,18 +49,6 @@ struct TouchMapperApp: App {
             .animation(.easeInOut(duration: 0.18), value: isFullScreen)
             .onChange(of: stickers) { newValue in
                 LayoutSticker.save(newValue)
-            }
-            .onChange(of: backgroundOpacity) { newValue in
-                LayoutSticker.saveBackgroundOpacity(newValue)
-            }
-            .onChange(of: backgroundScaleX) { newValue in
-                LayoutSticker.saveBackgroundScaleX(newValue)
-            }
-            .onChange(of: backgroundScaleY) { newValue in
-                LayoutSticker.saveBackgroundScaleY(newValue)
-            }
-            .onChange(of: backgroundImage) { newValue in
-                LayoutSticker.saveBackgroundImage(newValue)
             }
             .onChange(of: scenePhase) { phase in
                 // 切后台时把没抬起的触点全部释放，避免电脑端触点卡住

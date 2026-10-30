@@ -16,11 +16,9 @@ import SwiftUI
 struct StickerLayer: View {
 
     @Binding var stickers: [LayoutSticker]
-    @Binding var backgroundImage: UIImage?
-    @Binding var backgroundOpacity: Double
-    /// 背景横向 / 纵向缩放系数，各自独立
-    @Binding var backgroundScaleX: Double
-    @Binding var backgroundScaleY: Double
+
+    /// 背景参数走独立发布源，只在背景层订阅，拖动滑杆不影响贴纸
+    @ObservedObject var background: BackgroundModel
 
     /// 当前选中的贴纸，滑杆作用于它
     @Binding var selectedId: UUID?
@@ -28,6 +26,8 @@ struct StickerLayer: View {
     let isEditing: Bool
 
     @State private var editingTarget: LayoutSticker?
+    /// 正在关闭上一个 sheet 期间，禁止再次弹出（否则会连续 present 导致卡死）
+    @State private var isEditorClosing = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -35,7 +35,10 @@ struct StickerLayer: View {
             let shortSide = min(size.width, size.height)
 
             ZStack(alignment: .topLeading) {
-                backgroundLayer(size: size)
+                if size.width > 0, size.height > 0 {
+                    BackgroundLayer(model: background, containerSize: size)
+                        .zIndex(-1)
+                }
 
                 ForEach(stickers) { sticker in
                     StickerView(
@@ -45,7 +48,7 @@ struct StickerLayer: View {
                         isSelected: selectedId == sticker.id,
                         containerSize: size,
                         onDelete: { remove(sticker.id) },
-                        onEditText: { editingTarget = sticker },
+                        onEditText: { openEditor(for: sticker) },
                         onSelect: { selectedId = sticker.id },
                         onCommitDrag: { newX, newY in commitPosition(newX, newY, id: sticker.id) },
                         onCommitSize: { newRatio in commitSize(newRatio, id: sticker.id) }
@@ -56,50 +59,28 @@ struct StickerLayer: View {
             .frame(width: size.width, height: size.height)
         }
         .allowsHitTesting(isEditing)
-        .sheet(item: $editingTarget) { target in
+        .sheet(item: $editingTarget, onDismiss: {
+            isEditorClosing = false
+        }) { target in
             StickerTextEditor(sticker: target) { newText in
                 updateText(newText, for: target.id)
-                editingTarget = nil
+                closeEditor()
             } onCancel: {
-                editingTarget = nil
+                closeEditor()
             }
         }
     }
 
-    // MARK: - 背景
-
-    /// 背景图缩放：
-    /// · 基准 = 等比完整放进屏幕（fit）
-    /// · 再分别乘 X / Y 方向的独立系数，可非等比拉伸，撑满屏幕就用它调
-    @ViewBuilder
-    private func backgroundLayer(size: CGSize) -> some View {
-        if let image = backgroundImage, backgroundOpacity > 0.01,
-           size.width > 0, size.height > 0 {
-            let scaled = scaledSize(for: image.size, in: size)
-            ZStack {
-                Color.clear
-
-                Image(uiImage: image)
-                    .resizable()
-                    .frame(width: scaled.width, height: scaled.height)
-                    .opacity(backgroundOpacity)
-            }
-            .frame(width: size.width, height: size.height)
-            .clipped()
-            .allowsHitTesting(false)
-            .zIndex(-1)
-        }
+    /// 统一关闭入口：先标记为关闭中，等 onDismiss 回调后再解锁
+    private func closeEditor() {
+        isEditorClosing = true
+        editingTarget = nil
     }
 
-    /// 基准等比适配后再按 X / Y 独立放大
-    private func scaledSize(for imageSize: CGSize, in container: CGSize) -> CGSize {
-        guard imageSize.width > 0, imageSize.height > 0 else {
-            return container
-        }
-        let fit = min(container.width / imageSize.width,
-                      container.height / imageSize.height)
-        return CGSize(width: imageSize.width * fit * CGFloat(backgroundScaleX),
-                      height: imageSize.height * fit * CGFloat(backgroundScaleY))
+    /// 打开改字面板；关闭动画期间忽略重复请求
+    private func openEditor(for sticker: LayoutSticker) {
+        guard !isEditorClosing, editingTarget == nil else { return }
+        editingTarget = sticker
     }
 
     // MARK: - 回写
@@ -125,6 +106,44 @@ struct StickerLayer: View {
     private func remove(_ id: UUID) {
         stickers.removeAll { $0.id == id }
         if selectedId == id { selectedId = nil }
+    }
+}
+
+// MARK: - 背景层
+
+/// 独立的背景渲染视图，只订阅 BackgroundModel。
+/// 滑杆每帧改的是 model，只有这个视图会重绘，父视图和贴纸完全不受影响。
+private struct BackgroundLayer: View {
+
+    @ObservedObject var model: BackgroundModel
+    let containerSize: CGSize
+
+    var body: some View {
+        Group {
+            if let image = model.image, model.opacity > 0.01,
+               image.size.width > 0, image.size.height > 0 {
+                Image(uiImage: image)
+                    .resizable()
+                    .frame(width: targetSize(for: image.size).width,
+                           height: targetSize(for: image.size).height)
+                    .opacity(model.opacity)
+            }
+        }
+        .frame(width: containerSize.width, height: containerSize.height)
+        .clipped()
+        .allowsHitTesting(false)
+        // 关掉隐式动画，滑杆拖动时不参与动画插值，省一大截开销
+        .transaction { $0.animation = nil }
+    }
+
+    /// 基准等比适配后再按 X / Y 独立放大（可非等比拉伸）
+    private func targetSize(for imageSize: CGSize) -> CGSize {
+        guard containerSize.width > 0, containerSize.height > 0,
+              imageSize.width > 0, imageSize.height > 0 else { return .zero }
+        let fit = min(containerSize.width / imageSize.width,
+                      containerSize.height / imageSize.height)
+        return CGSize(width: imageSize.width * fit * CGFloat(model.scaleX),
+                      height: imageSize.height * fit * CGFloat(model.scaleY))
     }
 }
 
@@ -174,19 +193,14 @@ private struct StickerView: View {
             content
                 .frame(width: diameter, height: diameter)
                 .contentShape(Rectangle())
+                // 只挂一个手势，内部区分"点"和"拖"。
+                // 之前 tap 与 drag 同时挂，长按会同时触发两者，sheet 被反复打开/关闭 → 卡死。
                 .gesture(isEditing ? dragGesture : nil)
                 .simultaneousGesture(isEditing ? pinchGesture : nil)
-                // 轻点 = 选中 + 改字
-                .onTapGesture {
-                    guard isEditing else { return }
-                    onSelect()
-                    onEditText()
-                }
 
             if isEditing {
                 deleteButton
                     .offset(x: deleteBadgeSize * 0.34, y: -deleteBadgeSize * 0.34)
-                    // 只让红叉本身吃事件，不扩大成整块矩形
                     .zIndex(2)
             }
         }
@@ -284,19 +298,28 @@ private struct StickerView: View {
     // MARK: - 手势
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 4)
+        DragGesture(minimumDistance: 0)
             .updating($dragTranslation) { value, state, _ in
                 // 只更新本地 GestureState，不触碰父层 @Binding，拖动全程零重绘
                 state = value.translation
             }
-            .onChanged { _ in
-                if !isSelected { onSelect() }
+            .onChanged { value in
+                // 超过阈值才算拖动
+                let moved = abs(value.translation.width) + abs(value.translation.height)
+                if moved > 6, !isSelected { onSelect() }
             }
             .onEnded { value in
-                guard containerSize.width > 0, containerSize.height > 0 else { return }
-                let nx = sticker.centerX + Double(value.translation.width / containerSize.width)
-                let ny = sticker.centerY + Double(value.translation.height / containerSize.height)
-                onCommitDrag(nx, ny)
+                let moved = abs(value.translation.width) + abs(value.translation.height)
+                if moved > 6 {
+                    guard containerSize.width > 0, containerSize.height > 0 else { return }
+                    let nx = sticker.centerX + Double(value.translation.width / containerSize.width)
+                    let ny = sticker.centerY + Double(value.translation.height / containerSize.height)
+                    onCommitDrag(nx, ny)
+                } else {
+                    // 位移很小 = 轻点：选中并打开改字
+                    onSelect()
+                    onEditText()
+                }
             }
     }
 

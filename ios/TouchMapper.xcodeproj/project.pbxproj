@@ -20,6 +20,7 @@
 		A1000021000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000021000000000000000 /* Assets.xcassets */; };
 		A1000023000000000000001 /* JoystickPad.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000023000000000000000 /* JoystickPad.swift */; };
 		A1000025000000000000001 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000025000000000000000 /* Theme.swift */; };
+		A1000027000000000000001 /* BackgroundModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000027000000000000000 /* BackgroundModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,7 @@
 		A1000021000000000000000 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000023000000000000000 /* JoystickPad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoystickPad.swift; sourceTree = "<group>"; };
 		A1000025000000000000000 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		A1000027000000000000000 /* BackgroundModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -132,6 +134,7 @@
 				A1000019000000000000000 /* PresetSheet.swift */,
 				A1000023000000000000000 /* JoystickPad.swift */,
 				A1000025000000000000000 /* Theme.swift */,
+				A1000027000000000000000 /* BackgroundModel.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -218,6 +221,7 @@
 				A1000019000000000000001 /* PresetSheet.swift in Sources */,
 				A1000023000000000000001 /* JoystickPad.swift in Sources */,
 				A1000025000000000000001 /* Theme.swift in Sources */,
+				A1000027000000000000001 /* BackgroundModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

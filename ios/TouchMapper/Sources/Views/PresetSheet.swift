@@ -71,6 +71,7 @@ struct PresetSheet: View {
 
     @State private var newName: String = ""
     @State private var renaming: LayoutPreset?
+    @State private var isClosingRename = false
     @State private var renameText: String = ""
 
     private func dismiss() {
@@ -114,16 +115,24 @@ struct PresetSheet: View {
                     Button("完成") { dismiss() }
                 }
             }
-            .sheet(item: $renaming) { target in
+            .sheet(item: $renaming, onDismiss: {
+                isClosingRename = false
+            }) { target in
                 RenameSheet(name: renameText) { finalName in
                     store.rename(target, to: finalName)
-                    renaming = nil
+                    closeRename()
                 } onCancel: {
-                    renaming = nil
+                    closeRename()
                 }
             }
         }
         .navigationViewStyle(.stack)
+    }
+
+    /// 关闭期间锁住，避免动画未结束又 present 导致卡死
+    private func closeRename() {
+        isClosingRename = true
+        renaming = nil
     }
 
     @ViewBuilder
