@@ -168,22 +168,37 @@ private struct StickerView: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(color.opacity(0.22))
-                .overlay(
-                    Circle().strokeBorder(
-                        color.opacity(isSelected ? 1.0 : 0.85),
-                        lineWidth: isSelected ? 2.5 : 1.5
+            if sticker.style == .icon, let icon = StickerIconStore.load(sticker.iconFileName) {
+                // 图标键位：图片撑满圆圈，外圈描边保证在亮背景上也看得清
+                Image(uiImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: diameter, height: diameter)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle().strokeBorder(
+                            color.opacity(isSelected ? 1.0 : 0.85),
+                            lineWidth: isSelected ? 2.5 : 1.5
+                        )
                     )
-                )
+            } else {
+                Circle()
+                    .fill(color.opacity(0.22))
+                    .overlay(
+                        Circle().strokeBorder(
+                            color.opacity(isSelected ? 1.0 : 0.85),
+                            lineWidth: isSelected ? 2.5 : 1.5
+                        )
+                    )
 
-            Text(sticker.text)
-                .font(.system(size: max(9, diameter * 0.2), weight: .semibold))
-                .foregroundStyle(Color.white)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 4)
-                .frame(width: diameter * 0.85)
+                Text(sticker.text)
+                    .font(.system(size: max(9, diameter * 0.2), weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 4)
+                    .frame(width: diameter * 0.85)
+            }
 
             if isEditing {
                 deleteBadge

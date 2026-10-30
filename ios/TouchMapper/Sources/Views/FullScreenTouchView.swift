@@ -24,6 +24,12 @@ struct FullScreenTouchView: View {
     @State private var showAddPanel = false
     @State private var showPresetSheet = false
     @State private var showImagePicker = false
+    @State private var pickedImage: UIImage?
+    @State private var showImagePurpose = false
+    /// 非 nil 表示这次选图是替换某个键位的图标
+    @State private var pendingIconTarget: UUID?
+    /// true 表示这次选图一定当键位图标（点「图标」按钮进来的）
+    @State private var wantsIconOnly = false
     /// 当前选中的贴纸 id，两个滑杆作用在它身上
     @State private var selectedStickerId: UUID?
 
@@ -109,7 +115,37 @@ struct FullScreenTouchView: View {
             PresetSheet(stickers: $stickers)
         }
         .sheet(isPresented: $showImagePicker) {
-            ImagePicker(image: $backgroundImage)
+            ImagePicker(
+                image: $pickedImage,
+                onPicked: {
+                    // 用「图标」按钮进来的，直接当键位图标，不再问用途
+                    if pendingIconTarget != nil || wantsIconOnly {
+                        applyPickedImageAsIcon()
+                        wantsIconOnly = false
+                    } else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            showImagePurpose = true
+                        }
+                    }
+                },
+                onCancelled: {
+                    pendingIconTarget = nil
+                }
+            )
+        }
+        .confirmationDialog("这张图用来做什么？", isPresented: $showImagePurpose, titleVisibility: .visible) {
+            Button("设为键位图标") {
+                applyPickedImageAsIcon()
+            }
+            Button("设为背景参考图") {
+                if let pickedImage { backgroundImage = pickedImage }
+                pickedImage = nil
+            }
+            Button("取消", role: .cancel) {
+                pickedImage = nil
+            }
+        } message: {
+            Text("设为键位图标时，会替换当前选中的键位；没有选中就先新建一个图标键位。")
         }
     }
 
@@ -121,7 +157,7 @@ struct FullScreenTouchView: View {
                 if showAddPanel {
                     ForEach(LayoutSticker.Kind.allCases, id: \.self) { kind in
                         Button {
-                            addSticker(kind)
+                            addSticker(kind, style: .text)
                         } label: {
                             Text(kind.displayName)
                                 .font(.system(size: 13, weight: .medium))
@@ -133,6 +169,24 @@ struct FullScreenTouchView: View {
                                 )
                         }
                     }
+
+                    // 图标键位：选图后询问用途，这里直接进入选图并标记为图标
+                    Button {
+                        pendingIconTarget = nil
+                        wantsIconOnly = true
+                        showImagePicker = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "photo.circle.fill")
+                            Text("图标")
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(Capsule().fill(Color.purple.opacity(0.6)))
+                    }
+
                     Button {
                         showAddPanel = false
                     } label: {
@@ -186,14 +240,33 @@ struct FullScreenTouchView: View {
                 }
             }
 
-            // 选中贴纸后出现：大小 / 不透明度 两条滑杆
+            // 选中贴纸后出现：大小 / 不透明度 两条滑杆 + 换图标 / 切回文字
             if let selected = selectedSticker {
                 HStack(spacing: 10) {
-                    Text(selected.text)
+                    Text(selected.style == .icon ? "图标" : selected.text)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(selected.kind.tint)
                         .frame(width: 44, alignment: .leading)
                         .lineLimit(1)
+
+                    Button {
+                        // 选中某个键位后再导图，直接替换它的图标
+                        pendingIconTarget = selected.id
+                        wantsIconOnly = true
+                        showImagePicker = true
+                    } label: {
+                        Image(systemName: "photo.circle")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+
+                    Button {
+                        toggleSelectedStyle()
+                    } label: {
+                        Image(systemName: selected.style == .icon ? "textformat" : "photo")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
 
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 11))
@@ -202,7 +275,7 @@ struct FullScreenTouchView: View {
                         get: { selected.diameterRatio },
                         set: { newValue in updateSelectedDiameter(newValue) }
                     ), in: LayoutSticker.diameterRange)
-                    .frame(maxWidth: 150)
+                    .frame(maxWidth: 140)
 
                     Image(systemName: "circle.lefthalf.filled")
                         .font(.system(size: 11))
@@ -211,7 +284,7 @@ struct FullScreenTouchView: View {
                         get: { selected.opacity },
                         set: { newValue in updateSelectedOpacity(newValue) }
                     ), in: LayoutSticker.opacityRange)
-                    .frame(maxWidth: 150)
+                    .frame(maxWidth: 140)
 
                     Button {
                         selectedStickerId = nil
@@ -265,6 +338,9 @@ struct FullScreenTouchView: View {
 
             if isEditingStickers {
                 Button {
+                    // 工具栏这颗按钮：选完图后由用户决定当背景还是当键位图标
+                    pendingIconTarget = nil
+                    wantsIconOnly = false
                     showImagePicker = true
                 } label: {
                     Image(systemName: "photo.on.rectangle")
@@ -332,17 +408,67 @@ struct FullScreenTouchView: View {
                                     LayoutSticker.opacityRange.upperBound)
     }
 
-    private func addSticker(_ kind: LayoutSticker.Kind) {
+    private func addSticker(_ kind: LayoutSticker.Kind, style: LayoutSticker.Style = .text) {
         // 新贴纸放在画布中偏下的位置，按已有数量错开，避免完全重叠
         let index = stickers.count
         let column = index % 4
         let row = (index / 4) % 3
         let sticker = LayoutSticker(kind: kind,
                                     centerX: 0.30 + Double(column) * 0.13,
-                                    centerY: 0.70 - Double(row) * 0.11)
+                                    centerY: 0.70 - Double(row) * 0.11,
+                                    style: style)
         stickers.append(sticker)
         // 强反馈，确认真的加上了
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    /// 选完图后：替换指定键位的图标；没有目标就新建一个图标键位
+    private func applyPickedImageAsIcon() {
+        guard let image = pickedImage else { return }
+        defer { pickedImage = nil }
+
+        if let targetId = pendingIconTarget,
+           let idx = stickers.firstIndex(where: { $0.id == targetId }) {
+            let fileName = StickerIconStore.save(image, id: targetId)
+            stickers[idx].iconFileName = fileName
+            stickers[idx].style = .icon
+            selectedStickerId = targetId
+            pendingIconTarget = nil
+            return
+        }
+
+        // 没有指定目标：新建一个图标键位
+        let newId = UUID()
+        let fileName = StickerIconStore.save(image, id: newId)
+        let index = stickers.count
+        let column = index % 4
+        let row = (index / 4) % 3
+        var sticker = LayoutSticker(kind: .button,
+                                    centerX: 0.30 + Double(column) * 0.13,
+                                    centerY: 0.70 - Double(row) * 0.11,
+                                    style: .icon,
+                                    iconFileName: fileName)
+        sticker.id = newId
+        stickers.append(sticker)
+        selectedStickerId = newId
+        pendingIconTarget = nil
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    /// 图标键位 ↔ 文字键位 切换
+    private func toggleSelectedStyle() {
+        guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+
+        if stickers[idx].style == .icon {
+            stickers[idx].style = .text
+        } else if let fileName = stickers[idx].iconFileName {
+            stickers[idx].style = .icon
+        } else {
+            // 还没有图标，进入选图流程
+            pendingIconTarget = id
+            showImagePicker = true
+        }
     }
 
     private func exitFullScreen() {
@@ -375,6 +501,8 @@ extension LayoutSticker.Kind {
 struct ImagePicker: UIViewControllerRepresentable {
 
     @Binding var image: UIImage?
+    var onPicked: (() -> Void)?
+    var onCancelled: (() -> Void)?
     @Environment(\.presentationMode) private var presentationMode
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
@@ -403,10 +531,12 @@ struct ImagePicker: UIViewControllerRepresentable {
                 parent.image = picked
             }
             parent.presentationMode.wrappedValue.dismiss()
+            parent.onPicked?()
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             parent.presentationMode.wrappedValue.dismiss()
+            parent.onCancelled?()
         }
     }
 }
