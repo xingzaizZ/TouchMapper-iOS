@@ -19,6 +19,9 @@ struct StickerLayer: View {
     @Binding var backgroundImage: UIImage?
     @Binding var backgroundOpacity: Double
     @Binding var backgroundScale: Double
+    /// 背景图偏移，单位是屏幕宽/高的比例，-0.5 ~ 0.5
+    @Binding var backgroundOffsetX: Double
+    @Binding var backgroundOffsetY: Double
 
     /// 当前选中的贴纸，滑杆作用于它
     @Binding var selectedId: UUID?
@@ -83,6 +86,9 @@ struct StickerLayer: View {
                     .resizable()
                     .frame(width: fitted.width, height: fitted.height)
                     .opacity(backgroundOpacity)
+                    // 上下左右自定义偏移，按屏幕宽高比例换算
+                    .offset(x: CGFloat(backgroundOffsetX) * size.width,
+                            y: CGFloat(backgroundOffsetY) * size.height)
             }
             .frame(width: size.width, height: size.height)
             .clipped()
@@ -168,23 +174,33 @@ private struct StickerView: View {
     }
 
     var body: some View {
-        content
-            .frame(width: diameter, height: diameter)
-            // 删除徽标必须在 .position() 之前叠上去，否则对齐基准会变成整个容器，
-            // 徽标会飘到屏幕角落而不是贴纸右上角。
-            .overlay(alignment: .topTrailing) {
-                if isEditing {
-                    deleteButton
-                        // 往外挪一点点，压在贴纸边缘上，和参考图一致
-                        .offset(x: deleteBadgeSize * 0.32, y: -deleteBadgeSize * 0.32)
+        // 用 ZStack 明确分层：手势层在下铺满，徽标在上且只在自己的小圆里吃事件。
+        // 之前把 Button 塞进 .overlay 盖在 .gesture 之上，Button 会把整个贴纸区域的
+        // 触摸全吃掉，导致点不中贴纸、拖不动、改不了字。
+        ZStack(alignment: .topTrailing) {
+            content
+                .frame(width: diameter, height: diameter)
+                .contentShape(Rectangle())
+                .gesture(isEditing ? dragGesture : nil)
+                .simultaneousGesture(isEditing ? pinchGesture : nil)
+                // 轻点 = 选中 + 改字
+                .onTapGesture {
+                    guard isEditing else { return }
+                    onSelect()
+                    onEditText()
                 }
+
+            if isEditing {
+                deleteButton
+                    .offset(x: deleteBadgeSize * 0.34, y: -deleteBadgeSize * 0.34)
+                    // 只让红叉本身吃事件，不扩大成整块矩形
+                    .zIndex(2)
             }
-            .contentShape(Rectangle())
-            .opacity(sticker.opacity)
-            .gesture(isEditing ? dragGesture : nil)
-            .simultaneousGesture(isEditing ? pinchGesture : nil)
-            .position(currentPosition)
-            .allowsHitTesting(isEditing)
+        }
+        .frame(width: diameter, height: diameter)
+        .opacity(sticker.opacity)
+        .position(currentPosition)
+        .allowsHitTesting(isEditing)
     }
 
     private var deleteBadgeSize: CGFloat { 24 }

@@ -21,6 +21,8 @@ struct TouchMapperApp: App {
     @State private var backgroundImage: UIImage? = LayoutSticker.loadBackgroundImage()
     @State private var backgroundOpacity: Double = LayoutSticker.loadBackgroundOpacity()
     @State private var backgroundScale: Double = LayoutSticker.loadBackgroundScale()
+    @State private var backgroundOffsetX: Double = LayoutSticker.loadBackgroundOffsetX()
+    @State private var backgroundOffsetY: Double = LayoutSticker.loadBackgroundOffsetY()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -43,7 +45,9 @@ struct TouchMapperApp: App {
                         isPresented: $isFullScreen,
                         backgroundImage: $backgroundImage,
                         backgroundOpacity: $backgroundOpacity,
-                        backgroundScale: $backgroundScale
+                        backgroundScale: $backgroundScale,
+                        backgroundOffsetX: $backgroundOffsetX,
+                        backgroundOffsetY: $backgroundOffsetY
                     )
                     .transition(.opacity)
                     .zIndex(1)
@@ -58,6 +62,12 @@ struct TouchMapperApp: App {
             }
             .onChange(of: backgroundScale) { newValue in
                 LayoutSticker.saveBackgroundScale(newValue)
+            }
+            .onChange(of: backgroundOffsetX) { newValue in
+                LayoutSticker.saveBackgroundOffsetX(newValue)
+            }
+            .onChange(of: backgroundOffsetY) { newValue in
+                LayoutSticker.saveBackgroundOffsetY(newValue)
             }
             .onChange(of: backgroundImage) { newValue in
                 LayoutSticker.saveBackgroundImage(newValue)
@@ -81,6 +91,8 @@ extension LayoutSticker {
     private static let backgroundKey = "touchmapper.background"
     private static let backgroundOpacityKey = "touchmapper.backgroundOpacity"
     private static let backgroundScaleKey = "touchmapper.backgroundScale"
+    private static let backgroundOffsetXKey = "touchmapper.backgroundOffsetX"
+    private static let backgroundOffsetYKey = "touchmapper.backgroundOffsetY"
     private static let backgroundFile = "background.png"
 
     /// 首启默认布局
@@ -159,5 +171,21 @@ extension LayoutSticker {
 
     static func saveBackgroundScale(_ value: Double) {
         UserDefaults.standard.set(value, forKey: backgroundScaleKey)
+    }
+
+    static func loadBackgroundOffsetX() -> Double {
+        (UserDefaults.standard.object(forKey: backgroundOffsetXKey) as? Double) ?? 0
+    }
+
+    static func saveBackgroundOffsetX(_ value: Double) {
+        UserDefaults.standard.set(value, forKey: backgroundOffsetXKey)
+    }
+
+    static func loadBackgroundOffsetY() -> Double {
+        (UserDefaults.standard.object(forKey: backgroundOffsetYKey) as? Double) ?? 0
+    }
+
+    static func saveBackgroundOffsetY(_ value: Double) {
+        UserDefaults.standard.set(value, forKey: backgroundOffsetYKey)
     }
 }

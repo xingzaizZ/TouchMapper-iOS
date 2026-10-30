@@ -21,6 +21,8 @@ struct FullScreenTouchView: View {
     @Binding var backgroundImage: UIImage?
     @Binding var backgroundOpacity: Double
     @Binding var backgroundScale: Double
+    @Binding var backgroundOffsetX: Double
+    @Binding var backgroundOffsetY: Double
 
     @State private var showAddPanel = false
     @State private var showPresetSheet = false
@@ -92,6 +94,8 @@ struct FullScreenTouchView: View {
                     backgroundImage: $backgroundImage,
                     backgroundOpacity: $backgroundOpacity,
                     backgroundScale: $backgroundScale,
+                    backgroundOffsetX: $backgroundOffsetX,
+                    backgroundOffsetY: $backgroundOffsetY,
                     selectedId: $selectedStickerId,
                     isEditing: isEditingStickers
                 )
@@ -204,48 +208,88 @@ struct FullScreenTouchView: View {
             }
 
             if backgroundImage != nil {
-                HStack(spacing: 10) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.white.opacity(0.8))
-
-                    Slider(value: $backgroundOpacity, in: 0.05...1.0)
-                        .frame(maxWidth: 150)
-
-                    Text("\(Int(backgroundOpacity * 100))%")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.8))
-                        .frame(width: 34, alignment: .trailing)
-
-                    Text("缩放")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.7))
-
-                    Slider(value: $backgroundScale, in: 0.5...2.0)
-                        .frame(maxWidth: 150)
-
-                    Text("\(Int(backgroundScale * 100))%")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.8))
-                        .frame(width: 34, alignment: .trailing)
-
-                    Button {
-                        backgroundScale = 1.0
-                    } label: {
-                        Text("适配")
+                VStack(spacing: 6) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "photo")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.white.opacity(0.85))
+                            .foregroundStyle(Color.white.opacity(0.8))
+
+                        Slider(value: $backgroundOpacity, in: 0.05...1.0)
+                            .frame(maxWidth: 130)
+
+                        Text("\(Int(backgroundOpacity * 100))%")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.8))
+                            .frame(width: 34, alignment: .trailing)
+
+                        Text("缩放")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.7))
+
+                        Slider(value: $backgroundScale, in: 0.5...2.0)
+                            .frame(maxWidth: 130)
+
+                        Text("\(Int(backgroundScale * 100))%")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.8))
+                            .frame(width: 34, alignment: .trailing)
+
+                        Button {
+                            resetBackgroundTransform()
+                        } label: {
+                            Text("适配")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                        }
+
+                        Button {
+                            backgroundImage = nil
+                        } label: {
+                            Text("移除")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.red.opacity(0.9))
+                        }
+
+                        Spacer()
                     }
 
-                    Button {
-                        backgroundImage = nil
-                    } label: {
-                        Text("移除")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.red.opacity(0.9))
-                    }
+                    // 上下 / 左右 位置微调
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.left.and.right")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.7))
 
-                    Spacer()
+                        Slider(value: $backgroundOffsetX, in: -0.5...0.5)
+                            .frame(maxWidth: 130)
+
+                        Text(offsetText(backgroundOffsetX))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.8))
+                            .frame(width: 40, alignment: .trailing)
+
+                        Image(systemName: "arrow.up.and.down")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.7))
+
+                        Slider(value: $backgroundOffsetY, in: -0.5...0.5)
+                            .frame(maxWidth: 130)
+
+                        Text(offsetText(backgroundOffsetY))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.8))
+                            .frame(width: 40, alignment: .trailing)
+
+                        Button {
+                            backgroundOffsetX = 0
+                            backgroundOffsetY = 0
+                        } label: {
+                            Text("居中")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                        }
+
+                        Spacer()
+                    }
                 }
             }
 
@@ -438,6 +482,18 @@ struct FullScreenTouchView: View {
         stickers.append(sticker)
         // 强反馈，确认真的加上了
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    /// 一键回到「完美适配屏幕」：缩放 100%、居中
+    private func resetBackgroundTransform() {
+        backgroundScale = 1.0
+        backgroundOffsetX = 0
+        backgroundOffsetY = 0
+    }
+
+    private func offsetText(_ value: Double) -> String {
+        let pct = Int((value * 100).rounded())
+        return pct > 0 ? "+\(pct)%" : "\(pct)%"
     }
 
     /// 选完图当背景：立刻生效
