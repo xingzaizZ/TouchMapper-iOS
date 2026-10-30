@@ -115,9 +115,14 @@ struct FullScreenTouchView: View {
                 )
                 .ignoresSafeArea()
 
+                // 背景层独立挂在最下面，不经过 StickerLayer 的视图树，
+                // 调背景滑杆时不会带着贴纸一起重算。
+                BackgroundView(model: background)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+
                 StickerLayer(
                     stickers: $stickers,
-                    background: background,
                     selectedId: $selectedStickerId,
                     isEditing: editTarget == .stickers
                 )

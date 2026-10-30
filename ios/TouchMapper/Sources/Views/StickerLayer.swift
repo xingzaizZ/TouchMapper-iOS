@@ -17,9 +17,6 @@ struct StickerLayer: View {
 
     @Binding var stickers: [LayoutSticker]
 
-    /// 背景参数走独立发布源，只在背景层订阅，拖动滑杆不影响贴纸
-    @ObservedObject var background: BackgroundModel
-
     /// 当前选中的贴纸，滑杆作用于它
     @Binding var selectedId: UUID?
 
@@ -35,11 +32,6 @@ struct StickerLayer: View {
             let shortSide = min(size.width, size.height)
 
             ZStack(alignment: .topLeading) {
-                if size.width > 0, size.height > 0 {
-                    BackgroundLayer(model: background, containerSize: size)
-                        .zIndex(-1)
-                }
-
                 ForEach(stickers) { sticker in
                     StickerView(
                         sticker: sticker,
@@ -112,36 +104,38 @@ struct StickerLayer: View {
 // MARK: - 背景层
 
 /// 独立的背景渲染视图，只订阅 BackgroundModel。
-/// 滑杆每帧改的是 model，只有这个视图会重绘，父视图和贴纸完全不受影响。
-private struct BackgroundLayer: View {
+/// 它被直接挂在全屏页根 ZStack 里，不经过 StickerLayer，
+/// 因此调背景滑杆时贴纸层完全不参与重绘。
+struct BackgroundView: View {
 
     @ObservedObject var model: BackgroundModel
-    let containerSize: CGSize
 
     var body: some View {
-        Group {
-            if let image = model.image, model.opacity > 0.01,
-               image.size.width > 0, image.size.height > 0 {
-                Image(uiImage: image)
-                    .resizable()
-                    .frame(width: targetSize(for: image.size).width,
-                           height: targetSize(for: image.size).height)
-                    .opacity(model.opacity)
+        GeometryReader { proxy in
+            let size = proxy.size
+            Group {
+                if let image = model.image, model.opacity > 0.01,
+                   image.size.width > 0, image.size.height > 0 {
+                    Image(uiImage: image)
+                        .resizable()
+                        .frame(width: targetSize(for: image.size, in: size).width,
+                               height: targetSize(for: image.size, in: size).height)
+                        .opacity(model.opacity)
+                }
             }
+            .frame(width: size.width, height: size.height)
+            .clipped()
+            // 关掉隐式动画，滑杆拖动时不参与动画插值，省一大截开销
+            .transaction { $0.animation = nil }
         }
-        .frame(width: containerSize.width, height: containerSize.height)
-        .clipped()
-        .allowsHitTesting(false)
-        // 关掉隐式动画，滑杆拖动时不参与动画插值，省一大截开销
-        .transaction { $0.animation = nil }
     }
 
     /// 基准等比适配后再按 X / Y 独立放大（可非等比拉伸）
-    private func targetSize(for imageSize: CGSize) -> CGSize {
-        guard containerSize.width > 0, containerSize.height > 0,
+    private func targetSize(for imageSize: CGSize, in container: CGSize) -> CGSize {
+        guard container.width > 0, container.height > 0,
               imageSize.width > 0, imageSize.height > 0 else { return .zero }
-        let fit = min(containerSize.width / imageSize.width,
-                      containerSize.height / imageSize.height)
+        let fit = min(container.width / imageSize.width,
+                      container.height / imageSize.height)
         return CGSize(width: imageSize.width * fit * CGFloat(model.scaleX),
                       height: imageSize.height * fit * CGFloat(model.scaleY))
     }
@@ -167,6 +161,13 @@ private struct StickerView: View {
     @GestureState private var dragTranslation: CGSize = .zero
     /// 捏合中的缩放倍数
     @GestureState private var pinchScale: CGFloat = 1
+
+    /// 图标只在这里加载一次。
+    /// 之前把 StickerIconStore.load() 直接写在 body 里，每次重绘都做一次 NSCache 查找 +
+    /// 可能的磁盘解码，模式切换触发全量重绘时会瞬间堆爆主线程 —— 这就是切键位编辑卡死的原因。
+    @State private var cachedIcon: UIImage?
+
+    private var iconKey: String { sticker.iconFileName ?? "" }
 
     private var baseDiameter: CGFloat {
         max(22, shortSide * CGFloat(sticker.diameterRatio))
@@ -208,13 +209,30 @@ private struct StickerView: View {
         .opacity(sticker.opacity)
         .position(currentPosition)
         .allowsHitTesting(isEditing)
+        .onAppear {
+            reloadIconIfNeeded()
+        }
+        .onChange(of: iconKey) { _ in
+            reloadIconIfNeeded()
+        }
+        .onChange(of: sticker.style) { _ in
+            reloadIconIfNeeded()
+        }
+    }
+
+    private func reloadIconIfNeeded() {
+        guard sticker.style == .icon else {
+            cachedIcon = nil
+            return
+        }
+        cachedIcon = StickerIconStore.load(sticker.iconFileName)
     }
 
     private var deleteBadgeSize: CGFloat { 24 }
 
     @ViewBuilder
     private var content: some View {
-        if sticker.style == .icon, let icon = StickerIconStore.load(sticker.iconFileName) {
+        if let icon = cachedIcon {
             iconImage(icon)
                 .overlay(shapeStroke)
         } else {
