@@ -20,9 +20,8 @@ struct FullScreenTouchView: View {
 
     @Binding var backgroundImage: UIImage?
     @Binding var backgroundOpacity: Double
-    @Binding var backgroundScale: Double
-    @Binding var backgroundOffsetX: Double
-    @Binding var backgroundOffsetY: Double
+    @Binding var backgroundScaleX: Double
+    @Binding var backgroundScaleY: Double
 
     @State private var showAddPanel = false
     @State private var showPresetSheet = false
@@ -93,9 +92,8 @@ struct FullScreenTouchView: View {
                     stickers: $stickers,
                     backgroundImage: $backgroundImage,
                     backgroundOpacity: $backgroundOpacity,
-                    backgroundScale: $backgroundScale,
-                    backgroundOffsetX: $backgroundOffsetX,
-                    backgroundOffsetY: $backgroundOffsetY,
+                    backgroundScaleX: $backgroundScaleX,
+                    backgroundScaleY: $backgroundScaleY,
                     selectedId: $selectedStickerId,
                     isEditing: isEditingStickers
                 )
@@ -215,21 +213,9 @@ struct FullScreenTouchView: View {
                             .foregroundStyle(Color.white.opacity(0.8))
 
                         Slider(value: $backgroundOpacity, in: 0.05...1.0)
-                            .frame(maxWidth: 130)
+                            .frame(maxWidth: 120)
 
                         Text("\(Int(backgroundOpacity * 100))%")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.8))
-                            .frame(width: 34, alignment: .trailing)
-
-                        Text("缩放")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.white.opacity(0.7))
-
-                        Slider(value: $backgroundScale, in: 0.5...2.0)
-                            .frame(maxWidth: 130)
-
-                        Text("\(Int(backgroundScale * 100))%")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(Color.white.opacity(0.8))
                             .frame(width: 34, alignment: .trailing)
@@ -238,6 +224,14 @@ struct FullScreenTouchView: View {
                             resetBackgroundTransform()
                         } label: {
                             Text("适配")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                        }
+
+                        Button {
+                            fillBackgroundToScreen()
+                        } label: {
+                            Text("铺满")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Color.white.opacity(0.85))
                         }
@@ -253,16 +247,19 @@ struct FullScreenTouchView: View {
                         Spacer()
                     }
 
-                    // 上下 / 左右 位置微调
+                    // 横向 / 纵向 独立缩放（可不等比拉伸）
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.left.and.right")
                             .font(.system(size: 11))
                             .foregroundStyle(Color.white.opacity(0.7))
+                        Text("横向")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.7))
 
-                        Slider(value: $backgroundOffsetX, in: -0.5...0.5)
+                        Slider(value: $backgroundScaleX, in: 0.3...3.0)
                             .frame(maxWidth: 130)
 
-                        Text(offsetText(backgroundOffsetX))
+                        Text("\(Int(backgroundScaleX * 100))%")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(Color.white.opacity(0.8))
                             .frame(width: 40, alignment: .trailing)
@@ -270,23 +267,17 @@ struct FullScreenTouchView: View {
                         Image(systemName: "arrow.up.and.down")
                             .font(.system(size: 11))
                             .foregroundStyle(Color.white.opacity(0.7))
+                        Text("纵向")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.7))
 
-                        Slider(value: $backgroundOffsetY, in: -0.5...0.5)
+                        Slider(value: $backgroundScaleY, in: 0.3...3.0)
                             .frame(maxWidth: 130)
 
-                        Text(offsetText(backgroundOffsetY))
+                        Text("\(Int(backgroundScaleY * 100))%")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(Color.white.opacity(0.8))
                             .frame(width: 40, alignment: .trailing)
-
-                        Button {
-                            backgroundOffsetX = 0
-                            backgroundOffsetY = 0
-                        } label: {
-                            Text("居中")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.white.opacity(0.85))
-                        }
 
                         Spacer()
                     }
@@ -484,16 +475,27 @@ struct FullScreenTouchView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
-    /// 一键回到「完美适配屏幕」：缩放 100%、居中
+    /// 一键回到「等比完整适配」：横向纵向都 100%
     private func resetBackgroundTransform() {
-        backgroundScale = 1.0
-        backgroundOffsetX = 0
-        backgroundOffsetY = 0
+        backgroundScaleX = 1.0
+        backgroundScaleY = 1.0
     }
 
-    private func offsetText(_ value: Double) -> String {
-        let pct = Int((value * 100).rounded())
-        return pct > 0 ? "+\(pct)%" : "\(pct)%"
+    /// 一键铺满：按屏幕比例把背景放大到填满，横向纵向分别算
+    private func fillBackgroundToScreen() {
+        guard let image = backgroundImage else { return }
+        let screen = UIScreen.main.bounds.size
+        guard image.size.width > 0, image.size.height > 0,
+              screen.width > 0, screen.height > 0 else { return }
+
+        // 先算等比适配系数，再看要铺满屏幕各方向还得乘多少
+        let fit = min(screen.width / image.size.width,
+                      screen.height / image.size.height)
+        let fittedW = image.size.width * fit
+        let fittedH = image.size.height * fit
+
+        backgroundScaleX = min(max(Double(screen.width / fittedW), 0.3), 3.0)
+        backgroundScaleY = min(max(Double(screen.height / fittedH), 0.3), 3.0)
     }
 
     /// 选完图当背景：立刻生效

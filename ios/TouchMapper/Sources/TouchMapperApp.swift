@@ -20,9 +20,8 @@ struct TouchMapperApp: App {
     /// 键位参考背景图（用来对着电脑画面摆按钮），以及不透明度、缩放
     @State private var backgroundImage: UIImage? = LayoutSticker.loadBackgroundImage()
     @State private var backgroundOpacity: Double = LayoutSticker.loadBackgroundOpacity()
-    @State private var backgroundScale: Double = LayoutSticker.loadBackgroundScale()
-    @State private var backgroundOffsetX: Double = LayoutSticker.loadBackgroundOffsetX()
-    @State private var backgroundOffsetY: Double = LayoutSticker.loadBackgroundOffsetY()
+    @State private var backgroundScaleX: Double = LayoutSticker.loadBackgroundScaleX()
+    @State private var backgroundScaleY: Double = LayoutSticker.loadBackgroundScaleY()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -45,9 +44,8 @@ struct TouchMapperApp: App {
                         isPresented: $isFullScreen,
                         backgroundImage: $backgroundImage,
                         backgroundOpacity: $backgroundOpacity,
-                        backgroundScale: $backgroundScale,
-                        backgroundOffsetX: $backgroundOffsetX,
-                        backgroundOffsetY: $backgroundOffsetY
+                        backgroundScaleX: $backgroundScaleX,
+                        backgroundScaleY: $backgroundScaleY
                     )
                     .transition(.opacity)
                     .zIndex(1)
@@ -60,14 +58,11 @@ struct TouchMapperApp: App {
             .onChange(of: backgroundOpacity) { newValue in
                 LayoutSticker.saveBackgroundOpacity(newValue)
             }
-            .onChange(of: backgroundScale) { newValue in
-                LayoutSticker.saveBackgroundScale(newValue)
+            .onChange(of: backgroundScaleX) { newValue in
+                LayoutSticker.saveBackgroundScaleX(newValue)
             }
-            .onChange(of: backgroundOffsetX) { newValue in
-                LayoutSticker.saveBackgroundOffsetX(newValue)
-            }
-            .onChange(of: backgroundOffsetY) { newValue in
-                LayoutSticker.saveBackgroundOffsetY(newValue)
+            .onChange(of: backgroundScaleY) { newValue in
+                LayoutSticker.saveBackgroundScaleY(newValue)
             }
             .onChange(of: backgroundImage) { newValue in
                 LayoutSticker.saveBackgroundImage(newValue)
@@ -90,9 +85,8 @@ extension LayoutSticker {
     private static let stickersKey = "touchmapper.stickers"
     private static let backgroundKey = "touchmapper.background"
     private static let backgroundOpacityKey = "touchmapper.backgroundOpacity"
-    private static let backgroundScaleKey = "touchmapper.backgroundScale"
-    private static let backgroundOffsetXKey = "touchmapper.backgroundOffsetX"
-    private static let backgroundOffsetYKey = "touchmapper.backgroundOffsetY"
+    private static let backgroundScaleXKey = "touchmapper.backgroundScaleX"
+    private static let backgroundScaleYKey = "touchmapper.backgroundScaleY"
     private static let backgroundFile = "background.png"
 
     /// 首启默认布局
@@ -164,28 +158,19 @@ extension LayoutSticker {
         UserDefaults.standard.set(value, forKey: backgroundOpacityKey)
     }
 
-    static func loadBackgroundScale() -> Double {
-        let value = UserDefaults.standard.object(forKey: backgroundScaleKey) as? Double
-        return value ?? 1.0
+    static func loadBackgroundScaleX() -> Double {
+        (UserDefaults.standard.object(forKey: backgroundScaleXKey) as? Double) ?? 1.0
     }
 
-    static func saveBackgroundScale(_ value: Double) {
-        UserDefaults.standard.set(value, forKey: backgroundScaleKey)
+    static func saveBackgroundScaleX(_ value: Double) {
+        UserDefaults.standard.set(value, forKey: backgroundScaleXKey)
     }
 
-    static func loadBackgroundOffsetX() -> Double {
-        (UserDefaults.standard.object(forKey: backgroundOffsetXKey) as? Double) ?? 0
+    static func loadBackgroundScaleY() -> Double {
+        (UserDefaults.standard.object(forKey: backgroundScaleYKey) as? Double) ?? 1.0
     }
 
-    static func saveBackgroundOffsetX(_ value: Double) {
-        UserDefaults.standard.set(value, forKey: backgroundOffsetXKey)
-    }
-
-    static func loadBackgroundOffsetY() -> Double {
-        (UserDefaults.standard.object(forKey: backgroundOffsetYKey) as? Double) ?? 0
-    }
-
-    static func saveBackgroundOffsetY(_ value: Double) {
-        UserDefaults.standard.set(value, forKey: backgroundOffsetYKey)
+    static func saveBackgroundScaleY(_ value: Double) {
+        UserDefaults.standard.set(value, forKey: backgroundScaleYKey)
     }
 }

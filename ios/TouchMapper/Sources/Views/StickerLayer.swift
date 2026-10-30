@@ -18,10 +18,9 @@ struct StickerLayer: View {
     @Binding var stickers: [LayoutSticker]
     @Binding var backgroundImage: UIImage?
     @Binding var backgroundOpacity: Double
-    @Binding var backgroundScale: Double
-    /// 背景图偏移，单位是屏幕宽/高的比例，-0.5 ~ 0.5
-    @Binding var backgroundOffsetX: Double
-    @Binding var backgroundOffsetY: Double
+    /// 背景横向 / 纵向缩放系数，各自独立
+    @Binding var backgroundScaleX: Double
+    @Binding var backgroundScaleY: Double
 
     /// 当前选中的贴纸，滑杆作用于它
     @Binding var selectedId: UUID?
@@ -69,26 +68,21 @@ struct StickerLayer: View {
 
     // MARK: - 背景
 
-    /// 背景图按「完整适配屏幕」显示：
-    /// · 等比缩放到能完整放进屏幕（fit），不裁切、不放大到溢出
-    /// · 四周留黑边，保证你在图上量的位置和实际映射一致
-    /// · 若图片比屏幕小很多，允许放大到刚好贴合，避免缩在中间看不清
+    /// 背景图缩放：
+    /// · 基准 = 等比完整放进屏幕（fit）
+    /// · 再分别乘 X / Y 方向的独立系数，可非等比拉伸，撑满屏幕就用它调
     @ViewBuilder
     private func backgroundLayer(size: CGSize) -> some View {
         if let image = backgroundImage, backgroundOpacity > 0.01,
            size.width > 0, size.height > 0 {
-            let fitted = fittedSize(for: image.size, in: size)
+            let scaled = scaledSize(for: image.size, in: size)
             ZStack {
-                // 透明底：只让图片自身占位，四周留空不遮住下面的触摸层
                 Color.clear
 
                 Image(uiImage: image)
                     .resizable()
-                    .frame(width: fitted.width, height: fitted.height)
+                    .frame(width: scaled.width, height: scaled.height)
                     .opacity(backgroundOpacity)
-                    // 上下左右自定义偏移，按屏幕宽高比例换算
-                    .offset(x: CGFloat(backgroundOffsetX) * size.width,
-                            y: CGFloat(backgroundOffsetY) * size.height)
             }
             .frame(width: size.width, height: size.height)
             .clipped()
@@ -97,16 +91,15 @@ struct StickerLayer: View {
         }
     }
 
-    /// 等比缩放：完整放进容器，再乘用户设的缩放系数
-    private func fittedSize(for imageSize: CGSize, in container: CGSize) -> CGSize {
+    /// 基准等比适配后再按 X / Y 独立放大
+    private func scaledSize(for imageSize: CGSize, in container: CGSize) -> CGSize {
         guard imageSize.width > 0, imageSize.height > 0 else {
             return container
         }
         let fit = min(container.width / imageSize.width,
                       container.height / imageSize.height)
-        let scale = fit * CGFloat(backgroundScale)
-        return CGSize(width: imageSize.width * scale,
-                      height: imageSize.height * scale)
+        return CGSize(width: imageSize.width * fit * CGFloat(backgroundScaleX),
+                      height: imageSize.height * fit * CGFloat(backgroundScaleY))
     }
 
     // MARK: - 回写
