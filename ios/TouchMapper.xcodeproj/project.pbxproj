@@ -1,0 +1,343 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1000001000000000000001 /* TouchMapperApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001000000000000000 /* TouchMapperApp.swift */; };
+		A1000003000000000000001 /* TouchPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000003000000000000000 /* TouchPacket.swift */; };
+		A1000005000000000000001 /* TouchConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000005000000000000000 /* TouchConnection.swift */; };
+		A1000007000000000000001 /* TouchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000007000000000000000 /* TouchSession.swift */; };
+		A1000009000000000000001 /* MultiTouchCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000009000000000000000 /* MultiTouchCaptureView.swift */; };
+		A1000011000000000000001 /* LayoutSticker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000011000000000000000 /* LayoutSticker.swift */; };
+		A1000013000000000000001 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000013000000000000000 /* ConnectionView.swift */; };
+		A1000015000000000000001 /* FullScreenTouchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000015000000000000000 /* FullScreenTouchView.swift */; };
+		A1000017000000000000001 /* StickerLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000017000000000000000 /* StickerLayer.swift */; };
+		A1000019000000000000001 /* PresetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000019000000000000000 /* PresetSheet.swift */; };
+		A1000021000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000021000000000000000 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A1000000000000000000000 /* TouchMapper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TouchMapper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000001000000000000000 /* TouchMapperApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchMapperApp.swift; sourceTree = "<group>"; };
+		A1000003000000000000000 /* TouchPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchPacket.swift; sourceTree = "<group>"; };
+		A1000005000000000000000 /* TouchConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchConnection.swift; sourceTree = "<group>"; };
+		A1000007000000000000000 /* TouchSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchSession.swift; sourceTree = "<group>"; };
+		A1000009000000000000000 /* MultiTouchCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiTouchCaptureView.swift; sourceTree = "<group>"; };
+		A1000011000000000000000 /* LayoutSticker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutSticker.swift; sourceTree = "<group>"; };
+		A1000013000000000000000 /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
+		A1000015000000000000000 /* FullScreenTouchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenTouchView.swift; sourceTree = "<group>"; };
+		A1000017000000000000000 /* StickerLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerLayer.swift; sourceTree = "<group>"; };
+		A1000019000000000000000 /* PresetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetSheet.swift; sourceTree = "<group>"; };
+		A1000020000000000000000 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1000021000000000000000 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A1000030000000000000000 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A1000040000000000000000 = {
+			isa = PBXGroup;
+			children = (
+				A1000041000000000000000 /* TouchMapper */,
+				A1000042000000000000000 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A1000041000000000000000 /* TouchMapper */ = {
+			isa = PBXGroup;
+			children = (
+				A1000050000000000000000 /* Sources */,
+				A1000021000000000000000 /* Assets.xcassets */,
+				A1000020000000000000000 /* Info.plist */,
+			);
+			path = TouchMapper;
+			sourceTree = "<group>";
+		};
+		A1000042000000000000000 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000000 /* TouchMapper.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A1000050000000000000000 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A1000001000000000000000 /* TouchMapperApp.swift */,
+				A1000051000000000000000 /* Protocol */,
+				A1000052000000000000000 /* Networking */,
+				A1000053000000000000000 /* Touch */,
+				A1000054000000000000000 /* Models */,
+				A1000055000000000000000 /* Views */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		A1000051000000000000000 /* Protocol */ = {
+			isa = PBXGroup;
+			children = (
+				A1000003000000000000000 /* TouchPacket.swift */,
+			);
+			path = Protocol;
+			sourceTree = "<group>";
+		};
+		A1000052000000000000000 /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				A1000005000000000000000 /* TouchConnection.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		A1000053000000000000000 /* Touch */ = {
+			isa = PBXGroup;
+			children = (
+				A1000007000000000000000 /* TouchSession.swift */,
+				A1000009000000000000000 /* MultiTouchCaptureView.swift */,
+			);
+			path = Touch;
+			sourceTree = "<group>";
+		};
+		A1000054000000000000000 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A1000011000000000000000 /* LayoutSticker.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A1000055000000000000000 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A1000013000000000000000 /* ConnectionView.swift */,
+				A1000015000000000000000 /* FullScreenTouchView.swift */,
+				A1000017000000000000000 /* StickerLayer.swift */,
+				A1000019000000000000000 /* PresetSheet.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A1000060000000000000000 /* TouchMapper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000070000000000000000 /* Build configuration list for PBXNativeTarget "TouchMapper" */;
+			buildPhases = (
+				A1000061000000000000000 /* Sources */,
+				A1000030000000000000000 /* Frameworks */,
+				A1000062000000000000000 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TouchMapper;
+			productName = TouchMapper;
+			productReference = A1000000000000000000000 /* TouchMapper.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A1000080000000000000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					A1000060000000000000000 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = A1000090000000000000000 /* Build configuration list for PBXProject "TouchMapper" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				en,
+				Base,
+			);
+			mainGroup = A1000040000000000000000;
+			productRefGroup = A1000042000000000000000 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A1000060000000000000000 /* TouchMapper */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A1000062000000000000000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000021000000000000001 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A1000061000000000000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000001000000000000001 /* TouchMapperApp.swift in Sources */,
+				A1000003000000000000001 /* TouchPacket.swift in Sources */,
+				A1000005000000000000001 /* TouchConnection.swift in Sources */,
+				A1000007000000000000001 /* TouchSession.swift in Sources */,
+				A1000009000000000000001 /* MultiTouchCaptureView.swift in Sources */,
+				A1000011000000000000001 /* LayoutSticker.swift in Sources */,
+				A1000013000000000000001 /* ConnectionView.swift in Sources */,
+				A1000015000000000000001 /* FullScreenTouchView.swift in Sources */,
+				A1000017000000000000001 /* StickerLayer.swift in Sources */,
+				A1000019000000000000001 /* PresetSheet.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A10000A0000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A10000A1000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A10000B0000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TouchMapper/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.xiaogege.touchmapper";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A10000B1000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TouchMapper/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.xiaogege.touchmapper";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A1000070000000000000000 /* Build configuration list for PBXNativeTarget "TouchMapper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000B0000000000000000 /* Debug */,
+				A10000B1000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000090000000000000000 /* Build configuration list for PBXProject "TouchMapper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000A0000000000000000 /* Debug */,
+				A10000A1000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A1000080000000000000000 /* Project object */;
+}
