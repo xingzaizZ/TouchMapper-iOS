@@ -170,20 +170,24 @@ private struct StickerView: View {
     var body: some View {
         content
             .frame(width: diameter, height: diameter)
+            // 删除徽标必须在 .position() 之前叠上去，否则对齐基准会变成整个容器，
+            // 徽标会飘到屏幕角落而不是贴纸右上角。
+            .overlay(alignment: .topTrailing) {
+                if isEditing {
+                    deleteButton
+                        // 往外挪一点点，压在贴纸边缘上，和参考图一致
+                        .offset(x: deleteBadgeSize * 0.32, y: -deleteBadgeSize * 0.32)
+                }
+            }
             .contentShape(Rectangle())
-            .position(currentPosition)
             .opacity(sticker.opacity)
             .gesture(isEditing ? dragGesture : nil)
             .simultaneousGesture(isEditing ? pinchGesture : nil)
-            .overlay(alignment: .topTrailing) {
-                // 删除徽标固定在圆形/方形右上角，始终在贴纸范围内，保证可点
-                if isEditing {
-                    deleteButton
-                        .offset(x: -2, y: 2)
-                }
-            }
+            .position(currentPosition)
             .allowsHitTesting(isEditing)
     }
+
+    private var deleteBadgeSize: CGFloat { 24 }
 
     @ViewBuilder
     private var content: some View {
@@ -253,17 +257,17 @@ private struct StickerView: View {
         Button(action: onDelete) {
             ZStack {
                 Circle()
-                    .fill(Color.red)
-                    .frame(width: 22, height: 22)
+                    .fill(Color(red: 0.95, green: 0.26, blue: 0.21))
+                    .frame(width: deleteBadgeSize, height: deleteBadgeSize)
                     .overlay(
-                        Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
+                        Circle().strokeBorder(Color.black.opacity(0.55), lineWidth: 1.5)
                     )
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Color.white)
             }
             // 命中区比视觉大一圈，好点
-            .contentShape(Circle().inset(by: -10))
+            .contentShape(Circle().inset(by: -12))
         }
         .buttonStyle(.borderless)
     }
