@@ -2,11 +2,24 @@
 //  ConnectionView.swift
 //  TouchMapper iOS
 //
-//  连接面板：输入电脑 IPv4 + 端口，连 / 断。
-//  对应 Android 端 ConnectionPanel。
+//  连接面板：按 Android 版截图复刻的深色双栏布局。
+//  左栏：模式切换（摇杆 / 全屏触控）、电脑 IPv4、端口、状态、连接按钮
+//  右栏：摇杆测试区（可拖动），全屏触控模式下换成操作说明
 //
 
 import SwiftUI
+
+enum TouchMode: String, CaseIterable {
+    case joystick
+    case fullScreen
+
+    var displayName: String {
+        switch self {
+        case .joystick:   return "摇杆模式"
+        case .fullScreen: return "全屏触控"
+        }
+    }
+}
 
 struct ConnectionView: View {
 
@@ -16,196 +29,334 @@ struct ConnectionView: View {
     @Binding var stickers: [LayoutSticker]
     @Binding var isFullScreen: Bool
 
+    @State private var mode: TouchMode = .joystick
+    @State private var joystickPosition = CGPoint(x: 0.5, y: 0.5)
+    @State private var isJoystickDragging = false
     @State private var showDiagnostics = false
 
+    private var isConnected: Bool { connection.status.isConnected }
+
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 18) {
-                    headerCard
-                    addressCard
-                    actionRow
-                    hintCard
-                    if showDiagnostics {
-                        diagnosticsCard
+        ZStack {
+            Theme.background.ignoresSafeArea()
+
+            GeometryReader { proxy in
+                let isWide = proxy.size.width > 640
+                Group {
+                    if isWide {
+                        HStack(spacing: 14) {
+                            leftPanel
+                                .frame(maxWidth: proxy.size.width * 0.46)
+                            rightPanel
+                                .frame(maxWidth: .infinity)
+                        }
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 14) {
+                                leftPanel
+                                rightPanel
+                                    .frame(height: min(proxy.size.width, 420))
+                            }
+                            .padding(.vertical, 8)
+                        }
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 14)
+                .padding(.top, isWide ? 10 : 0)
             }
-            .background(Color(UIColor.systemGroupedBackground))
-            .navigationTitle("触控映射")
-            .navigationBarTitleDisplayMode(.large)
         }
-        .navigationViewStyle(.stack)
+        .preferredColorScheme(.dark)
     }
 
-    // MARK: - 卡片
+    // MARK: - 左栏
 
-    private var headerCard: some View {
-        VStack(spacing: 10) {
-            Image(systemName: connection.status.isConnected ? "wifi" : "wifi.slash")
-                .font(.system(size: 42, weight: .light))
-                .foregroundColor(connection.status.isConnected ? Color.green : Color.secondary)
+    private var leftPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("触控映射")
+                .font(.system(size: 30, weight: .bold))
+                .foregroundColor(Theme.primaryText)
 
-            Text(connection.status.displayText)
-                .font(.headline)
-                .multilineTextAlignment(.center)
+            Text("Wi-Fi 局域网 · 支持摇杆和全屏多点触控")
+                .font(.system(size: 14))
+                .foregroundColor(Theme.secondaryText)
+                .padding(.top, 6)
 
-            Text("Wi-Fi 局域网 · 默认端口 \(TouchMapperProtocol.defaultPort)")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        .background(cardBackground)
-    }
+            modeSelector
+                .padding(.top, 18)
 
-    private var addressCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("电脑 IPv4 地址")
-                .font(.subheadline)
-                .fontWeight(.semibold)
+            VStack(spacing: 12) {
+                hostField
+                portField
+            }
+            .padding(.top, 18)
 
-            TextField("例如 192.168.1.23", text: $connection.host)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .keyboardType(.numbersAndPunctuation)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
-                .disabled(connection.status.isConnected)
+            statusPill
+                .padding(.top, 16)
 
-            HStack {
-                Text("端口").font(.subheadline)
-                TextField("17890", value: Binding(
-                    get: { connection.port },
-                    set: { connection.port = $0 }
-                ), format: .number)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .keyboardType(.numberPad)
-                .frame(width: 110)
-                .disabled(connection.status.isConnected)
+            Text(hintText)
+                .font(.system(size: 13))
+                .foregroundColor(Theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 12)
 
-                Spacer()
+            Spacer(minLength: 16)
+
+            if showDiagnostics {
+                diagnostics
+                    .padding(.bottom, 10)
             }
 
-            Text("填电脑当前 Wi-Fi 的 IPv4，不是路由器地址，也不是手机自己的 IP。")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            connectButton
         }
-        .padding(16)
-        .background(cardBackground)
+        .padding(20)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Theme.card)
+        )
     }
 
-    private var actionRow: some View {
-        VStack(spacing: 12) {
-            if connection.status.isConnected {
+    private var modeSelector: some View {
+        HStack(spacing: 12) {
+            ForEach(TouchMode.allCases, id: \.self) { item in
                 Button {
-                    isFullScreen = true
+                    mode = item
                 } label: {
-                    HStack {
-                        Image(systemName: "hand.tap.fill")
-                        Text("进入全屏触控")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    Text(item.displayName)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(mode == item ? Color.white : Theme.primaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            Capsule()
+                                .fill(mode == item ? Theme.segmentSelected : Color.clear)
+                        )
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(
+                                    mode == item ? Color.clear : Theme.stroke,
+                                    lineWidth: 1
+                                )
+                        )
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            }
+        }
+    }
+
+    private var hostField: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(Theme.stroke, lineWidth: 1)
+            .frame(height: 58)
+            .overlay(
+                TextField("电脑 IPv4 地址", text: $connection.host)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .keyboardType(.numbersAndPunctuation)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .disabled(isConnected)
+                    .foregroundColor(Theme.primaryText)
+                    .padding(.horizontal, 14),
+                alignment: .leading
+            )
+    }
+
+    private var portField: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(Theme.stroke, lineWidth: 1)
+            .frame(height: 58)
+            .overlay(
+                HStack {
+                    Text("端口")
+                        .font(.system(size: 13))
+                        .foregroundColor(Theme.secondaryText)
+                    Spacer()
+                    TextField("17890", value: Binding(
+                        get: { connection.port },
+                        set: { connection.port = $0 }
+                    ), format: .number)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundColor(Theme.primaryText)
+                    .disabled(isConnected)
+                }
+                .padding(.horizontal, 14)
+            )
+    }
+
+    private var statusPill: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(isConnected ? Color.green : Theme.secondaryText.opacity(0.8))
+                .frame(width: 7, height: 7)
+            Text(connection.status.displayText)
+                .font(.system(size: 14))
+                .foregroundColor(Theme.primaryText)
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.black.opacity(0.25))
+        )
+    }
+
+    private var hintText: String {
+        if isConnected {
+            switch mode {
+            case .joystick:
+                return "先在电脑端点“定位中心”并把十字拖到游戏左摇杆上，再点“锁定并开始控制”，然后拖动右边摇杆。"
+            case .fullScreen:
+                return "点下方按钮进入全屏触控，手指位置会按比例映射到电脑桌面。"
+            }
+        }
+        return "电脑端启动后输入其 IPv4 地址，默认端口 \(TouchMapperProtocol.defaultPort)。连接成功再操作。"
+    }
+
+    private var diagnostics: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            diagRow("目标", TouchMapperProtocol.url(host: connection.host, port: connection.port)?.absoluteString ?? "地址无效")
+            diagRow("已发送包", "\(connection.sentPackets)")
+            diagRow("丢弃移动包", "\(connection.droppedMoves)")
+            diagRow("本机 IP", LocalNetworkInfo.wifiIPv4() ?? "未取到")
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.black.opacity(0.25))
+        )
+    }
+
+    private func diagRow(_ name: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(name).font(.system(size: 11)).foregroundColor(Theme.secondaryText)
+            Spacer()
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(Theme.secondaryText)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var connectButton: some View {
+        if isConnected {
+            VStack(spacing: 10) {
+                if mode == .fullScreen {
+                    Button {
+                        isFullScreen = true
+                    } label: {
+                        Text("进入全屏触控")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(Color.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 17)
+                            .background(Capsule().fill(Theme.accent))
+                    }
+                }
 
                 Button {
+                    releaseCurrentMode()
                     connection.disconnect()
                 } label: {
-                    HStack {
-                        Image(systemName: "bolt.horizontal.circle")
-                        Text("断开电脑")
-                    }
-                    .frame(maxWidth: .infinity)
+                    Text("断开电脑")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Theme.primaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(
+                            Capsule()
+                                .strokeBorder(Theme.stroke, lineWidth: 1)
+                        )
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .foregroundColor(.red)
-            } else {
+            }
+        } else {
+            VStack(spacing: 10) {
                 Button {
                     connection.connect()
                 } label: {
-                    HStack {
-                        Image(systemName: "bolt.horizontal.fill")
-                        Text("连接电脑")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    Text("连接电脑")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Color.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 17)
+                        .background(Capsule().fill(Theme.accent))
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
 
                 Button {
                     withAnimation { showDiagnostics.toggle() }
                 } label: {
                     Text(showDiagnostics ? "隐藏连接诊断" : "显示连接诊断")
-                        .font(.footnote)
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.secondaryText)
                 }
             }
         }
     }
 
-    private var hintCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "info.circle")
-                Text("使用要点").font(.subheadline).fontWeight(.semibold)
+    // MARK: - 右栏
+
+    private var rightPanel: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Theme.card)
+
+            VStack(spacing: 0) {
+                Text(rightTitle)
+                    .font(.system(size: 15))
+                    .foregroundColor(Theme.secondaryText)
+                    .padding(.top, 16)
+
+                if mode == .joystick {
+                    JoystickPad(
+                        position: $joystickPosition,
+                        isDragging: $isJoystickDragging,
+                        isEnabled: isConnected,
+                        padRatio: 0.62
+                    ) { phase, point in
+                        connection.sendJoystick(phase: phase,
+                                                x: Float(point.x),
+                                                y: Float(point.y))
+                    }
+                    .padding(24)
+                } else {
+                    fullTouchHint
+                }
             }
-
-            bullet("电脑端 TouchMapper.exe 必须保持运行，窗口显示「等待手机连接」。")
-            bullet("手机和电脑要连同一个 Wi-Fi；访客网络、客户端隔离会挡住互访。")
-            bullet("第一次连不上，先在 Windows 防火墙允许该程序通过「专用网络」。")
-            bullet("把游戏或模拟器设为全屏，并让手机与电脑画面方向一致，位置才对得上。")
-            bullet("屏幕上那些按钮只是位置提示，不会自己触发；真正发送的是你的手指位置。")
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBackground)
-    }
-
-    private var diagnosticsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "stethoscope")
-                Text("连接诊断").font(.subheadline).fontWeight(.semibold)
-            }
-
-            row("目标地址", TouchMapperProtocol.url(host: connection.host, port: connection.port)?.absoluteString ?? "地址无效")
-            row("已发送包数", "\(connection.sentPackets)")
-            row("丢弃的移动包", "\(connection.droppedMoves)")
-            row("本机 IP", LocalNetworkInfo.wifiIPv4() ?? "未取到（需在 Wi-Fi 下）")
-
-            Text("iOS 14 以上首次连接局域网会弹「本地网络」权限，拒绝后无法连接；到 设置 → 隐私与安全性 → 本地网络 里重新打开。")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBackground)
-    }
-
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(Color(UIColor.secondarySystemGroupedBackground))
-    }
-
-    private func bullet(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("•").foregroundColor(.secondary)
-            Text(text).font(.footnote)
         }
     }
 
-    private func row(_ name: String, _ value: String) -> some View {
-        HStack(alignment: .top) {
-            Text(name).font(.caption).foregroundColor(.secondary)
+    private var rightTitle: String {
+        if mode == .joystick {
+            return isConnected ? "左摇杆测试 · 拖动控制电脑" : "左摇杆测试 · 连接后可拖动"
+        }
+        return "全屏触控 · 手指位置映射到电脑桌面"
+    }
+
+    private var fullTouchHint: some View {
+        VStack(spacing: 14) {
             Spacer()
-            Text(value)
-                .font(.system(.caption, design: .monospaced))
-                .multilineTextAlignment(.trailing)
+            Image(systemName: "hand.tap.fill")
+                .font(.system(size: 54, weight: .thin))
+                .foregroundColor(Theme.accent.opacity(0.85))
+            Text("进入全屏后，在屏幕上按、拖或多指同按，电脑会收到对应位置的触摸。")
+                .font(.system(size: 13))
+                .foregroundColor(Theme.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer()
         }
+    }
+
+    // MARK: - 动作
+
+    private func releaseCurrentMode() {
+        connection.releaseJoystick()
+        connection.releaseAll(contactIds: Set(session.contacts.keys),
+                              screenWidth: session.pixelWidth,
+                              screenHeight: session.pixelHeight)
+        session.reset()
     }
 }
 

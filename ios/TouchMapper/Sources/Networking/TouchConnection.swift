@@ -60,6 +60,10 @@ final class TouchConnection: NSObject, ObservableObject {
     private var pendingMove: ScreenTouchPacket?
     private var moveFlushTask: Task<Void, Never>?
 
+    /// 摇杆的待发移动包：(x, y)，0.5 为正中心
+    private var pendingJoystickMove: (Float, Float)?
+    private var joystickFlushTask: Task<Void, Never>?
+
     /// move 包节流间隔：60Hz
     private let moveIntervalNanos: UInt64 = 16_000_000
     /// 断线自动重连
@@ -247,5 +251,69 @@ final class TouchConnection: NSObject, ObservableObject {
             send(phase: .cancel, x: 0, y: 0, contactId: id,
                  screenWidth: screenWidth, screenHeight: screenHeight)
         }
+    }
+
+    // MARK: - 摇杆
+
+    /// 发一个摇杆包。x/y 为相对中心的归一化偏移（0.5 是正中心）。
+    /// 摇杆只有单个触点，电脑端要求已「锁定并开始控制」，否则整包被忽略。
+    func sendJoystick(phase: JoystickPacket.Phase, x: Float, y: Float) {
+        guard status.isConnected else { return }
+
+        switch phase {
+        case .move:
+            if pendingJoystickMove != nil { droppedMoves += 1 }
+            pendingJoystickMove = (min(max(x, 0), 1), min(max(y, 0), 1))
+            scheduleJoystickFlush()
+        case .down, .up, .cancel:
+            flushPendingJoystick()
+            emitJoystick(phase: phase, x: x, y: y)
+        }
+    }
+
+    private func scheduleJoystickFlush() {
+        guard joystickFlushTask == nil else { return }
+        joystickFlushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: self?.moveIntervalNanos ?? 16_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.joystickFlushTask = nil
+            self.flushPendingJoystick()
+        }
+    }
+
+    private func flushPendingJoystick() {
+        joystickFlushTask?.cancel()
+        joystickFlushTask = nil
+        guard let pending = pendingJoystickMove else { return }
+        pendingJoystickMove = nil
+        emitJoystick(phase: .move, x: pending.0, y: pending.1)
+    }
+
+    private func emitJoystick(phase: JoystickPacket.Phase, x: Float, y: Float) {
+        guard let task, status.isConnected else { return }
+
+        sequence += 1
+        let packet = JoystickPacket(phase: phase,
+                                    x: min(max(x, 0), 1),
+                                    y: min(max(y, 0), 1),
+                                    sequence: sequence)
+
+        guard let data = try? JSONEncoder().encode(packet),
+              let text = String(data: data, encoding: .utf8) else { return }
+
+        sentPackets += 1
+        task.send(.string(text)) { [weak self] error in
+            guard let error else { return }
+            Task { @MainActor [weak self] in
+                guard let self, let current = self.task else { return }
+                self.handleTransportFailure(error, task: current)
+            }
+        }
+    }
+
+    /// 松手 / 退出时先把摇杆归零到中心再抬起，避免残留方向
+    func releaseJoystick() {
+        guard status.isConnected else { return }
+        emitJoystick(phase: .cancel, x: 0.5, y: 0.5)
     }
 }

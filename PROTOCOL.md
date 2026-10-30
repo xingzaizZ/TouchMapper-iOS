@@ -42,8 +42,8 @@ writeTimeout = 0s（无限）
 
 每帧是一段 UTF-8 JSON 文本，`type` 字段区分模式：
 
-- `"screen-touch"` → 全屏触控模式（**本项目只实现这个**）
-- `"joystick"` → 摇杆模式（旧测试功能，原说明已要求忽略）
+- `"screen-touch"` → 全屏触控模式
+- `"joystick"` → 摇杆模式
 
 ### 3.1 screen-touch 消息（全屏触控）
 
@@ -75,7 +75,6 @@ writeTimeout = 0s（无限）
 > 因此 `screenWidth` / `ScreenWidth` / `screenwidth` 都能识别，但请统一用上面的写法。
 
 ### 3.2 坐标换算（服务端）
-
 服务端拿到 `x, y ∈ [0,1]` 后：
 
 ```
@@ -104,6 +103,54 @@ py = deskTop  + round(clamp(y, 0, 1) * (deskHeight - 1))
 - 最多 **10 个触点**，超过直接丢弃并记错
 - 收到 `move` / `up` / `cancel` 但 `contactId` 不存在：静默忽略
 - 收到 `up` / `cancel` 后从触点表移除；触点表空了就停心跳
+
+### 3.3.1 joystick 消息（摇杆模式）
+
+```json
+{
+  "type": "joystick",
+  "phase": "move",
+  "x": 0.5,
+  "y": 0.5,
+  "sequence": 88,
+  "contactId": 0
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | string | 固定 `"joystick"` |
+| `phase` | string | `"down"` / `"move"` / `"up"` / `"cancel"` |
+| `x` | float | **相对摇杆中心的归一化偏移**，`0.5` = 正中心，范围 `0~1` |
+| `y` | float | 同上，纵轴 |
+| `sequence` | int64 | 单调递增 |
+| `contactId` | int | 摇杆恒为 `0`（单触点） |
+
+**坐标语义和 screen-touch 完全不同**，服务端换算（`TouchInjector.CalculatePosition`）：
+
+```
+dx = (clamp(x,0,1) - 0.5) * 2 * radius
+dy = (clamp(y,0,1) - 0.5) * 2 * radius
+len = sqrt(dx² + dy²)
+if len > radius:            # 超出底座就截断到圆周
+    dx = dx / len * radius
+    dy = dy / len * radius
+px = clamp(centerX + dx, 桌面左边, 桌面右边)
+py = clamp(centerY + dy, 桌面上边, 桌面下边)
+```
+
+- `centerX/centerY/radius` 由**电脑端**决定：界面上「定位中心」把十字拖到游戏左摇杆位置，再点「锁定并开始控制」
+- `radius` 电脑端 clamp 到 `20~160` 像素，默认 `86`
+- `pointerId` 恒为 `0`，`touchMask = 0x5`，压力 `512`，触点矩形 ±2px
+
+**关键行为（反编译 `JoystickMapping.Apply` 得到）**：
+
+1. 电脑端**未锁定**时，任何摇杆包都被直接丢弃（`Ignored`），不会注入
+2. `down` 时服务端先注入一个 `(0.5, 0.5)` 的按下，再补一帧真实位置
+3. `move` 来的时候如果还没有活动触点，会被忽略（日志「尚无有效按下触点，请松手后重试」）
+4. `down` 时如果有旧触点还在，先 `cancel` 掉旧的
+5. 摇杆**没有 50ms 心跳**，松手后必须补一帧 `up`/`cancel`，否则电脑端触点会一直按着
+6. 电脑端收到任意一包摇杆，会顺带 `fullScreenInjector.ReleaseAll()`；反之收到全屏触控会 `mapping.Release()`。**两种模式互斥，不能同时按**
 
 ### 3.4 电脑端注入细节（iOS 端无需实现，供理解）
 
