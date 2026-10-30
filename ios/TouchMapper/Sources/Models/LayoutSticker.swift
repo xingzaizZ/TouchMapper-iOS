@@ -52,17 +52,29 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
     var centerY: Double
     /// 直径，相对屏幕短边的比例
     var diameterRatio: Double
+    /// 自身不透明度 0.15 ~ 1.0
+    var opacity: Double = 0.85
 
-    init(kind: Kind, text: String? = nil, centerX: Double, centerY: Double, diameterRatio: Double? = nil) {
+    init(kind: Kind,
+         text: String? = nil,
+         centerX: Double,
+         centerY: Double,
+         diameterRatio: Double? = nil,
+         opacity: Double = 0.85) {
         self.kind = kind
         self.text = text ?? kind.defaultText
         self.centerX = centerX
         self.centerY = centerY
         self.diameterRatio = diameterRatio ?? Double(kind.defaultDiameterRatio)
+        self.opacity = opacity
     }
 
     /// 文本上限 40 字符，与 Android 端一致
     static let maxTextLength = 40
+    /// 直径可调范围（相对屏幕短边）
+    static let diameterRange: ClosedRange<Double> = 0.04...0.7
+    /// 不透明度可调范围
+    static let opacityRange: ClosedRange<Double> = 0.15...1.0
 }
 
 /// 一套布局预设

@@ -24,6 +24,8 @@ struct FullScreenTouchView: View {
     @State private var showAddPanel = false
     @State private var showPresetSheet = false
     @State private var showImagePicker = false
+    /// 当前选中的贴纸 id，两个滑杆作用在它身上
+    @State private var selectedStickerId: UUID?
 
     var body: some View {
         GeometryReader { proxy in
@@ -83,6 +85,7 @@ struct FullScreenTouchView: View {
                     stickers: $stickers,
                     backgroundImage: $backgroundImage,
                     backgroundOpacity: $backgroundOpacity,
+                    selectedId: $selectedStickerId,
                     isEditing: isEditingStickers
                 )
                 .ignoresSafeArea()
@@ -164,7 +167,7 @@ struct FullScreenTouchView: View {
                         .foregroundStyle(Color.white.opacity(0.8))
 
                     Slider(value: $backgroundOpacity, in: 0.05...1.0)
-                        .frame(maxWidth: 220)
+                        .frame(maxWidth: 200)
 
                     Text("\(Int(backgroundOpacity * 100))%")
                         .font(.system(size: 11, design: .monospaced))
@@ -181,6 +184,53 @@ struct FullScreenTouchView: View {
 
                     Spacer()
                 }
+            }
+
+            // 选中贴纸后出现：大小 / 不透明度 两条滑杆
+            if let selected = selectedSticker {
+                HStack(spacing: 10) {
+                    Text(selected.text)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(selected.kind.tint)
+                        .frame(width: 44, alignment: .leading)
+                        .lineLimit(1)
+
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                    Slider(value: Binding(
+                        get: { selected.diameterRatio },
+                        set: { newValue in updateSelectedDiameter(newValue) }
+                    ), in: LayoutSticker.diameterRange)
+                    .frame(maxWidth: 150)
+
+                    Image(systemName: "circle.lefthalf.filled")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                    Slider(value: Binding(
+                        get: { selected.opacity },
+                        set: { newValue in updateSelectedOpacity(newValue) }
+                    ), in: LayoutSticker.opacityRange)
+                    .frame(maxWidth: 150)
+
+                    Button {
+                        selectedStickerId = nil
+                    } label: {
+                        Text("取消选中")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.7))
+                    }
+
+                    Spacer()
+                }
+            } else if isEditingStickers {
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.tap")
+                        .font(.system(size: 11))
+                    Text("轻点一个按键，即可用滑杆调它的大小和透明度")
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(Color.white.opacity(0.6))
             }
         }
         .padding(.horizontal, 12)
@@ -261,6 +311,26 @@ struct FullScreenTouchView: View {
     }
 
     // MARK: - 动作
+
+    /// 当前选中的贴纸（滑杆作用对象）
+    private var selectedSticker: LayoutSticker? {
+        guard let id = selectedStickerId else { return nil }
+        return stickers.first { $0.id == id }
+    }
+
+    private func updateSelectedDiameter(_ value: Double) {
+        guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].diameterRatio = min(max(value, LayoutSticker.diameterRange.lowerBound),
+                                          LayoutSticker.diameterRange.upperBound)
+    }
+
+    private func updateSelectedOpacity(_ value: Double) {
+        guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].opacity = min(max(value, LayoutSticker.opacityRange.lowerBound),
+                                    LayoutSticker.opacityRange.upperBound)
+    }
 
     private func addSticker(_ kind: LayoutSticker.Kind) {
         // 新贴纸放在画布中偏下的位置，按已有数量错开，避免完全重叠

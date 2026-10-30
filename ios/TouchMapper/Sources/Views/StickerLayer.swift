@@ -22,6 +22,9 @@ struct StickerLayer: View {
     @Binding var backgroundImage: UIImage?
     @Binding var backgroundOpacity: Double
 
+    /// 当前选中的贴纸，滑杆作用于它
+    @Binding var selectedId: UUID?
+
     let isEditing: Bool
 
     @State private var draggingId: UUID?
@@ -40,14 +43,16 @@ struct StickerLayer: View {
                         sticker: sticker,
                         shortSide: shortSide,
                         isEditing: isEditing,
+                        isSelected: selectedId == sticker.id,
                         position: position(for: sticker, container: size),
                         onDelete: { remove(sticker.id) },
                         onEditText: { editingTarget = sticker },
+                        onSelect: { selectedId = sticker.id },
                         onDragChanged: { translation in handleDragChanged(translation, sticker, size) },
                         onDragEnded: { translation in handleDragEnded(translation, sticker, size) },
                         onMagnify: { delta in handleMagnify(delta, sticker) }
                     )
-                    .zIndex(draggingId == sticker.id ? 10 : 0)
+                    .zIndex(draggingId == sticker.id ? 10 : (selectedId == sticker.id ? 5 : 0))
                 }
             }
             .frame(width: size.width, height: size.height)
@@ -145,10 +150,12 @@ private struct StickerView: View {
     let sticker: LayoutSticker
     let shortSide: CGFloat
     let isEditing: Bool
+    let isSelected: Bool
     let position: CGPoint
 
     let onDelete: () -> Void
     let onEditText: () -> Void
+    let onSelect: () -> Void
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: (CGSize) -> Void
     let onMagnify: (CGFloat) -> Void
@@ -156,7 +163,7 @@ private struct StickerView: View {
     @State private var lastMagnify: CGFloat = 1
 
     private var diameter: CGFloat {
-        max(28, shortSide * CGFloat(sticker.diameterRatio))
+        max(22, shortSide * CGFloat(sticker.diameterRatio))
     }
 
     var body: some View {
@@ -164,11 +171,14 @@ private struct StickerView: View {
             Circle()
                 .fill(color.opacity(0.22))
                 .overlay(
-                    Circle().strokeBorder(color.opacity(0.85), lineWidth: 1.5)
+                    Circle().strokeBorder(
+                        color.opacity(isSelected ? 1.0 : 0.85),
+                        lineWidth: isSelected ? 2.5 : 1.5
+                    )
                 )
 
             Text(sticker.text)
-                .font(.system(size: max(10, diameter * 0.2), weight: .semibold))
+                .font(.system(size: max(9, diameter * 0.2), weight: .semibold))
                 .foregroundStyle(Color.white)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
@@ -180,6 +190,7 @@ private struct StickerView: View {
             }
         }
         .frame(width: diameter, height: diameter)
+        .opacity(sticker.opacity)
         .position(position)
         .contentShape(Circle())
         .gesture(dragGesture)
@@ -208,12 +219,15 @@ private struct StickerView: View {
                 // 手指几乎没动就是点击，交给 tap 处理，避免误拖
                 let moved = abs(value.translation.width) + abs(value.translation.height)
                 if moved < 6 { return }
+                onSelect()
                 onDragChanged(value.translation)
             }
             .onEnded { value in
                 guard isEditing else { return }
                 let moved = abs(value.translation.width) + abs(value.translation.height)
                 if moved < 6 {
+                    // 轻点 = 选中（供滑杆调整），同时进入改字
+                    onSelect()
                     onEditText()
                 } else {
                     onDragEnded(value.translation)
