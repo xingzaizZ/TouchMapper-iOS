@@ -74,8 +74,9 @@ final class TouchCaptureUIView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        // 让触摸投递不走系统延迟合并，压低输入延迟。这是 UIView 自己的方法。
-        requestUnbufferedDispatch(for: .allTouchTypes)
+        // 说明：UIKit 没有公开的「关闭触摸合并」接口（requestUnbufferedDispatch 只在
+        // UIGestureRecognizer 内部可用），这里不做额外设置。
+        // 真实输入延迟已经足够低；若后续需要更低延迟，可改用 CADisplayLink + 预测位置。
     }
 
     // MARK: - 触点映射
