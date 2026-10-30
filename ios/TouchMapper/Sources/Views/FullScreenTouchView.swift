@@ -255,6 +255,15 @@ struct FullScreenTouchView: View {
                             .foregroundStyle(Color.white.opacity(0.85))
                     }
 
+                    // 圆形 / 方形 切换
+                    Button {
+                        toggleSelectedShape()
+                    } label: {
+                        Image(systemName: selected.shape == .circle ? "circle" : "square")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.white.opacity(0.7))
@@ -454,9 +463,16 @@ struct FullScreenTouchView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
-    /// 图标键位 ↔ 文字键位 切换
-    private func toggleSelectedStyle() {
+    /// 圆形 ↔ 方形 切换
+    private func toggleSelectedShape() {
         guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].shape = stickers[idx].shape == .circle ? .square : .circle
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// 图标键位 ↔ 文字键位 切换
+    private func toggleSelectedStyle() {        guard let id = selectedStickerId,
               let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
 
         if stickers[idx].style == .icon {

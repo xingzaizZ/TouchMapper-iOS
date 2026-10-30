@@ -63,6 +63,19 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
         }
     }
 
+    /// 键位外形
+    enum Shape: String, Codable, CaseIterable {
+        case circle
+        case square
+
+        var displayName: String {
+            switch self {
+            case .circle: return "圆形"
+            case .square: return "方形"
+            }
+        }
+    }
+
     var id: UUID = UUID()
     var kind: Kind
     var text: String
@@ -75,6 +88,8 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
     var opacity: Double = 0.85
     /// 显示形态
     var style: Style = .text
+    /// 外形
+    var shape: Shape = .circle
     /// 图标文件名（存在 Documents/stickerIcons 下），style == .icon 时有效
     var iconFileName: String?
 
@@ -85,6 +100,7 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
          diameterRatio: Double? = nil,
          opacity: Double = 0.85,
          style: Style = .text,
+         shape: Shape = .circle,
          iconFileName: String? = nil) {
         self.kind = kind
         self.text = text ?? kind.defaultText
@@ -93,13 +109,14 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
         self.diameterRatio = diameterRatio ?? Double(kind.defaultDiameterRatio)
         self.opacity = opacity
         self.style = style
+        self.shape = shape
         self.iconFileName = iconFileName
     }
 
     // MARK: - 旧数据兼容
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, text, centerX, centerY, diameterRatio, opacity, style, iconFileName
+        case id, kind, text, centerX, centerY, diameterRatio, opacity, style, shape, iconFileName
     }
 
     init(from decoder: Decoder) throws {
@@ -113,6 +130,7 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
             ?? Double(kind.defaultDiameterRatio)
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 0.85
         style = try c.decodeIfPresent(Style.self, forKey: .style) ?? .text
+        shape = try c.decodeIfPresent(Shape.self, forKey: .shape) ?? .circle
         iconFileName = try c.decodeIfPresent(String.self, forKey: .iconFileName)
     }
 

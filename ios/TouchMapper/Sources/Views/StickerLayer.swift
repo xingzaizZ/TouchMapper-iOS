@@ -168,32 +168,67 @@ private struct StickerView: View {
         max(22, shortSide * CGFloat(sticker.diameterRatio))
     }
 
+    private var cornerRadius: CGFloat {
+        sticker.shape == .circle ? diameter / 2 : diameter * 0.16
+    }
+
+    /// 外形裁剪路径：圆形用 Circle，方形用圆角矩形
+    @ViewBuilder
+    private var shapePath: some View {
+        if sticker.shape == .circle {
+            Circle().strokeBorder(
+                color.opacity(isSelected ? 1.0 : 0.85),
+                lineWidth: isSelected ? 2.5 : 1.5
+            )
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(
+                    color.opacity(isSelected ? 1.0 : 0.85),
+                    lineWidth: isSelected ? 2.5 : 1.5
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var shapeFill: some View {
+        if sticker.shape == .circle {
+            Circle().fill(color.opacity(0.22))
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(color.opacity(0.22))
+        }
+    }
+
+    /// 图标按形状裁剪（iOS 15 没有 AnyShape，用分支实现）
+    @ViewBuilder
+    private func iconImage(_ image: UIImage) -> some View {
+        if sticker.shape == .circle {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: diameter, height: diameter)
+                .clipShape(Circle())
+        } else {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: diameter, height: diameter)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
+    }
+
     var body: some View {
         ZStack {
-            // 圆本体：只负责显示与拖动
+            // 键位本体：只负责显示与拖动
             ZStack {
                 if sticker.style == .icon, let icon = StickerIconStore.load(sticker.iconFileName) {
-                    // 图标键位：图片撑满圆圈，外圈描边保证在亮背景上也看得清
-                    Image(uiImage: icon)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: diameter, height: diameter)
-                        .clipShape(Circle())
-                        .overlay(
-                            Circle().strokeBorder(
-                                color.opacity(isSelected ? 1.0 : 0.85),
-                                lineWidth: isSelected ? 2.5 : 1.5
-                            )
-                        )
+                    // 图标键位：图片按形状裁剪，外圈描边保证在亮背景上也看得清
+                    iconImage(icon)
+                        .overlay(shapePath)
                 } else {
-                    Circle()
-                        .fill(color.opacity(0.22))
-                        .overlay(
-                            Circle().strokeBorder(
-                                color.opacity(isSelected ? 1.0 : 0.85),
-                                lineWidth: isSelected ? 2.5 : 1.5
-                            )
-                        )
+                    shapeFill
+                        .frame(width: diameter, height: diameter)
+                        .overlay(shapePath)
 
                     Text(sticker.text)
                         .font(.system(size: max(9, diameter * 0.2), weight: .semibold))
@@ -205,7 +240,7 @@ private struct StickerView: View {
                 }
             }
             .frame(width: diameter, height: diameter)
-            .contentShape(Circle())
+            .contentShape(Rectangle())
             .gesture(dragGesture)
             .simultaneousGesture(magnifyGesture)
         }
