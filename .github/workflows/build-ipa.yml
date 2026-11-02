@@ -29,6 +29,12 @@ concurrency:
   group: ipa-${{ github.ref }}
   cancel-in-progress: true
 
+# softprops/action-gh-release 需要 contents: write 才能建 Release；
+# 不声明的话默认 token 只有 read 权限，最后一步会 403。
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build:
     name: Build TouchMapper IPA
