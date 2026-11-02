@@ -52,17 +52,25 @@ jobs:
 
       # ── 编译期先跑一遍 Swift 语法自检，能在打包前把明显的语法错误挡下来 ──
       - name: Swift syntax sanity check
+        shell: bash
         run: |
           set -o pipefail
           fail=0
-          while IFS= read -r -d '' f; do
-            if ! xcrun swiftc -parse "$f" 2>build_parse.err; then
+          count=0
+          for f in $(find ios/TouchMapper/Sources -name '*.swift'); do
+            count=$((count + 1))
+            if ! xcrun swiftc -parse "$f" 2> build_parse.err; then
               echo "::error file=$f::语法解析失败"
               cat build_parse.err
               fail=1
             fi
-          done < <(find ios/TouchMapper/Sources -name '*.swift' -print0)
+          done
           rm -f build_parse.err
+          echo "检查了 $count 个 Swift 文件"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::没找到任何 Swift 源文件，检查路径"
+            exit 1
+          fi
           exit $fail
 
       # ── 未签名归档 ──
