@@ -72,15 +72,9 @@ extension LayoutSticker {
     private static let backgroundScaleYKey = "touchmapper.backgroundScaleY"
     private static let backgroundFile = "background.png"
 
-    /// 首启默认布局
+    /// 首启默认布局：直接给王者荣耀横屏键位，进游戏就能用
     static var defaultLayout: [LayoutSticker] {
-        [
-            LayoutSticker(kind: .joystick, text: "移动",  centerX: 0.18, centerY: 0.70),
-            LayoutSticker(kind: .attack,   text: "攻击",  centerX: 0.84, centerY: 0.78),
-            LayoutSticker(kind: .skill,    text: "技能1", centerX: 0.72, centerY: 0.62),
-            LayoutSticker(kind: .skill,    text: "技能2", centerX: 0.85, centerY: 0.50),
-            LayoutSticker(kind: .button,   text: "蹲",    centerX: 0.09, centerY: 0.45)
-        ]
+        GamePresets.honorOfKings
     }
 
     // MARK: - 布局持久化

@@ -1,4 +1,4 @@
-// !$*UTF8*$!
+﻿// !$*UTF8*$!
 {
 	archiveVersion = 1;
 	classes = {
@@ -21,6 +21,8 @@
 		A1000023000000000000001 /* JoystickPad.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000023000000000000000 /* JoystickPad.swift */; };
 		A1000025000000000000001 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000025000000000000000 /* Theme.swift */; };
 		A1000027000000000000001 /* BackgroundModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000027000000000000000 /* BackgroundModel.swift */; };
+		A1000029000000000000001 /* KeyMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000029000000000000000 /* KeyMapping.swift */; };
+		A1000031000000000000001 /* GamePresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000031000000000000000 /* GamePresets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +42,8 @@
 		A1000023000000000000000 /* JoystickPad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoystickPad.swift; sourceTree = "<group>"; };
 		A1000025000000000000000 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		A1000027000000000000000 /* BackgroundModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModel.swift; sourceTree = "<group>"; };
+		A1000029000000000000000 /* KeyMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyMapping.swift; sourceTree = "<group>"; };
+		A1000031000000000000000 /* GamePresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamePresets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +125,8 @@
 			isa = PBXGroup;
 			children = (
 				A1000011000000000000000 /* LayoutSticker.swift */,
+				A1000029000000000000000 /* KeyMapping.swift */,
+				A1000031000000000000000 /* GamePresets.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -222,6 +228,8 @@
 				A1000023000000000000001 /* JoystickPad.swift in Sources */,
 				A1000025000000000000001 /* Theme.swift in Sources */,
 				A1000027000000000000001 /* BackgroundModel.swift in Sources */,
+				A1000029000000000000001 /* KeyMapping.swift in Sources */,
+				A1000031000000000000001 /* GamePresets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -294,7 +302,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.xiaogege.touchmapper";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -318,7 +326,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.xiaogege.touchmapper";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

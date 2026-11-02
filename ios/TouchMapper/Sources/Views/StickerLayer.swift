@@ -22,6 +22,9 @@ struct StickerLayer: View {
 
     let isEditing: Bool
 
+    /// 浏览模式下正被手指按住的贴纸，用来做高亮反馈
+    var activeIds: Set<UUID> = []
+
     @State private var editingTarget: LayoutSticker?
     /// 正在关闭上一个 sheet 期间，禁止再次弹出（否则会连续 present 导致卡死）
     @State private var isEditorClosing = false
@@ -38,6 +41,7 @@ struct StickerLayer: View {
                         shortSide: shortSide,
                         isEditing: isEditing,
                         isSelected: selectedId == sticker.id,
+                        isActive: activeIds.contains(sticker.id),
                         containerSize: size,
                         onDelete: { remove(sticker.id) },
                         onEditText: { openEditor(for: sticker) },
@@ -149,6 +153,8 @@ private struct StickerView: View {
     let shortSide: CGFloat
     let isEditing: Bool
     let isSelected: Bool
+    /// 浏览模式下被实际按住 —— 画个高亮，方便确认映射命中得对不对
+    let isActive: Bool
     let containerSize: CGSize
 
     let onDelete: () -> Void
@@ -273,23 +279,31 @@ private struct StickerView: View {
     @ViewBuilder
     private var shapeFill: some View {
         if sticker.shape == .circle {
-            Circle().fill(color.opacity(0.22))
+            Circle().fill(color.opacity(isActive ? 0.55 : 0.22))
         } else {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(color.opacity(0.22))
+                .fill(color.opacity(isActive ? 0.55 : 0.22))
         }
     }
 
     @ViewBuilder
     private var shapeStroke: some View {
         if sticker.shape == .circle {
-            Circle().strokeBorder(color.opacity(isSelected ? 1.0 : 0.85),
-                                  lineWidth: isSelected ? 2.5 : 1.5)
+            Circle().strokeBorder(color.opacity(strokeOpacity), lineWidth: strokeWidth)
         } else {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(color.opacity(isSelected ? 1.0 : 0.85),
-                              lineWidth: isSelected ? 2.5 : 1.5)
+                .strokeBorder(color.opacity(strokeOpacity), lineWidth: strokeWidth)
         }
+    }
+
+    private var strokeOpacity: Double {
+        if isActive { return 1.0 }
+        if isSelected { return 1.0 }
+        return 0.85
+    }
+
+    private var strokeWidth: CGFloat {
+        isActive ? 3.0 : (isSelected ? 2.5 : 1.5)
     }
 
     // MARK: - 删除

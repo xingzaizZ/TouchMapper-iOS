@@ -48,6 +48,14 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
             case .button:   return 0.09
             }
         }
+
+        /// 默认输出模式：摇杆类走拖动摇杆，其余都是一点即发
+        var defaultOutputMode: OutputMode {
+            switch self {
+            case .joystick: return .joystick
+            default:        return .point
+            }
+        }
     }
 
     /// 键位显示形态
@@ -93,6 +101,19 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
     /// 图标文件名（存在 Documents/stickerIcons 下），style == .icon 时有效
     var iconFileName: String?
 
+    // MARK: - 映射字段
+
+    /// 手指落到这个按钮时怎么发触点：点击 / 摇杆
+    var mode: OutputMode = .point
+    /// 摇杆半径，相对屏幕短边的比例；mode == .point 时忽略
+    var radiusRatio: Double = 0.10
+    /// 连发开关：按住时按间隔重复打点（如某些英雄的普攻/连招）
+    var burstEnabled: Bool = false
+    /// 连发间隔（秒）
+    var burstInterval: Double = 0.12
+    /// 是否参与映射。关掉后这个贴纸只是视觉参考，手指落到它上面仍然按原坐标透传。
+    var isMapped: Bool = true
+
     init(kind: Kind,
          text: String? = nil,
          centerX: Double,
@@ -101,7 +122,12 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
          opacity: Double = 0.85,
          style: Style = .text,
          shape: Shape = .circle,
-         iconFileName: String? = nil) {
+         iconFileName: String? = nil,
+         mode: OutputMode? = nil,
+         radiusRatio: Double? = nil,
+         burstEnabled: Bool = false,
+         burstInterval: Double = 0.12,
+         isMapped: Bool = true) {
         self.kind = kind
         self.text = text ?? kind.defaultText
         self.centerX = centerX
@@ -111,12 +137,18 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
         self.style = style
         self.shape = shape
         self.iconFileName = iconFileName
+        self.mode = mode ?? kind.defaultOutputMode
+        self.radiusRatio = radiusRatio ?? max(0.06, Double(kind.defaultDiameterRatio) * 0.5)
+        self.burstEnabled = burstEnabled
+        self.burstInterval = burstInterval
+        self.isMapped = isMapped
     }
 
     // MARK: - 旧数据兼容
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, text, centerX, centerY, diameterRatio, opacity, style, shape, iconFileName
+        case mode, radiusRatio, burstEnabled, burstInterval, isMapped
     }
 
     init(from decoder: Decoder) throws {
@@ -132,6 +164,14 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
         style = try c.decodeIfPresent(Style.self, forKey: .style) ?? .text
         shape = try c.decodeIfPresent(Shape.self, forKey: .shape) ?? .circle
         iconFileName = try c.decodeIfPresent(String.self, forKey: .iconFileName)
+
+        // 老的存档没有这些字段，按 kind 给合理默认值，保证升级后立刻可用
+        mode = try c.decodeIfPresent(OutputMode.self, forKey: .mode) ?? kind.defaultOutputMode
+        radiusRatio = try c.decodeIfPresent(Double.self, forKey: .radiusRatio)
+            ?? max(0.06, diameterRatio * 0.5)
+        burstEnabled = try c.decodeIfPresent(Bool.self, forKey: .burstEnabled) ?? false
+        burstInterval = try c.decodeIfPresent(Double.self, forKey: .burstInterval) ?? 0.12
+        isMapped = try c.decodeIfPresent(Bool.self, forKey: .isMapped) ?? true
     }
 
     /// 文本上限 40 字符，与 Android 端一致
@@ -140,6 +180,10 @@ struct LayoutSticker: Identifiable, Codable, Equatable {
     static let diameterRange: ClosedRange<Double> = 0.04...0.7
     /// 不透明度可调范围
     static let opacityRange: ClosedRange<Double> = 0.15...1.0
+    /// 摇杆半径可调范围
+    static let radiusRange: ClosedRange<Double> = 0.03...0.45
+    /// 连发间隔可调范围
+    static let burstIntervalRange: ClosedRange<Double> = 0.05...0.50
 }
 
 // MARK: - 图标文件存取

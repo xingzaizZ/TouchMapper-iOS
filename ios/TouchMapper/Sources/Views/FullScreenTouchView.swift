@@ -23,6 +23,9 @@ struct FullScreenTouchView: View {
     /// 背景参数（独立发布源，避免滑杆拖动导致整页重绘卡死）
     @ObservedObject var background: BackgroundModel
 
+    /// 映射运行时：浏览模式下决定「手指落在哪个按钮 → 发哪个坐标」
+    @StateObject private var keyMap = KeyMapRuntime()
+
     /// 当前编辑目标
     enum EditTarget: String, CaseIterable {
         case browse
@@ -56,6 +59,12 @@ struct FullScreenTouchView: View {
     @State private var wantsIconOnly = false
     @State private var selectedStickerId: UUID?
 
+    /// 是否启用按键映射（关掉就是原版「手指到哪就点哪」的透传）
+    @State private var mappingEnabled = true
+
+    /// 连发计时器：每个触点一条
+    @State private var burstTasks: [Int: Task<Void, Never>] = [:]
+
     /// sheet 关闭动画期间锁住，避免连续 present 卡死
     @State private var isSheetClosing = false
 
@@ -72,42 +81,19 @@ struct FullScreenTouchView: View {
                     onTouchBegan: { id, point in
                         guard isSendingTouch else { return }
                         session.updateContentSize(proxy.size)
-                        session.beginContact(id: id, at: point)
-                        let p = session.normalized(point)
-                        connection.send(phase: .down,
-                                        x: Float(p.x), y: Float(p.y),
-                                        contactId: id,
-                                        screenWidth: session.pixelWidth,
-                                        screenHeight: session.pixelHeight)
+                        handleBegan(id: id, point: point, size: proxy.size)
                     },
                     onTouchMoved: { id, point in
                         guard isSendingTouch else { return }
                         session.moveContact(id: id, to: point)
-                        let p = session.normalized(point)
-                        connection.send(phase: .move,
-                                        x: Float(p.x), y: Float(p.y),
-                                        contactId: id,
-                                        screenWidth: session.pixelWidth,
-                                        screenHeight: session.pixelHeight)
+                        handleMoved(id: id, point: point, size: proxy.size)
                     },
                     onTouchEnded: { id, point in
                         guard isSendingTouch else { return }
-                        let p = session.normalized(point)
-                        connection.send(phase: .up,
-                                        x: Float(p.x), y: Float(p.y),
-                                        contactId: id,
-                                        screenWidth: session.pixelWidth,
-                                        screenHeight: session.pixelHeight)
-                        session.endContact(id: id)
+                        handleEnded(id: id, point: point, size: proxy.size)
                     },
                     onTouchCancelled: { id, point in
-                        let p = session.normalized(point)
-                        connection.send(phase: .cancel,
-                                        x: Float(p.x), y: Float(p.y),
-                                        contactId: id,
-                                        screenWidth: session.pixelWidth,
-                                        screenHeight: session.pixelHeight)
-                        session.endContact(id: id)
+                        handleCancelled(id: id, point: point, size: proxy.size)
                     },
                     onSizeChanged: { size in
                         session.updateContentSize(size)
@@ -124,7 +110,8 @@ struct FullScreenTouchView: View {
                 StickerLayer(
                     stickers: $stickers,
                     selectedId: $selectedStickerId,
-                    isEditing: editTarget == .stickers
+                    isEditing: editTarget == .stickers,
+                    activeIds: keyMap.activeStickerIds
                 )
                 .ignoresSafeArea()
 
@@ -145,9 +132,15 @@ struct FullScreenTouchView: View {
         .statusBarHidden(true)
         .onAppear {
             syncExternalEditFlag()
+            mappingEnabled = UserDefaults.standard.object(forKey: "touchmapper.mappingEnabled") as? Bool ?? true
         }
         .onDisappear {
+            stopAllBurst()
             releaseTouches()
+        }
+        .onChange(of: mappingEnabled) { newValue in
+            UserDefaults.standard.set(newValue, forKey: "touchmapper.mappingEnabled")
+            if !newValue { releaseTouches() }
         }
         .sheet(isPresented: $showPresetSheet, onDismiss: {
             isSheetClosing = false
@@ -177,6 +170,117 @@ struct FullScreenTouchView: View {
         }
     }
 
+    // MARK: - 触摸处理
+
+    /// 按「落点模式」发一帧。mappingEnabled 关掉就是原版透传。
+    private func emit(phase: ScreenTouchPacket.Phase,
+                      normalized: CGPoint,
+                      contactId: Int) {
+        connection.send(phase: phase,
+                        x: Float(normalized.x),
+                        y: Float(normalized.y),
+                        contactId: contactId,
+                        screenWidth: session.pixelWidth,
+                        screenHeight: session.pixelHeight)
+    }
+
+    private func handleBegan(id: Int, point: CGPoint, size: CGSize) {
+        session.beginContact(id: id, at: point)
+
+        guard mappingEnabled else {
+            // 关闭映射：手指在哪就点哪
+            emit(phase: .down, normalized: session.normalized(point), contactId: id)
+            return
+        }
+
+        guard let contact = keyMap.begin(contactId: id,
+                                         point: point,
+                                         size: size,
+                                         stickers: stickers) else {
+            // 没落在任何按钮上：仍然透传，方便临时点游戏里的其它 UI
+            emit(phase: .down, normalized: session.normalized(point), contactId: id)
+            return
+        }
+
+        // 落在按钮上：发按钮锚点
+        emit(phase: .down, normalized: contact.anchor, contactId: id)
+
+        // 连发：按住期间按固定间隔重复打点
+        if let sticker = stickers.first(where: { $0.id == contact.stickerId }),
+           sticker.burstEnabled {
+            startBurst(contactId: id, sticker: sticker)
+        }
+    }
+
+    private func handleMoved(id: Int, point: CGPoint, size: CGSize) {
+        guard mappingEnabled else {
+            emit(phase: .move, normalized: session.normalized(point), contactId: id)
+            return
+        }
+
+        guard let target = keyMap.move(contactId: id, point: point, size: size) else {
+            // 这个触点不在映射里（起始就透传的），继续按原坐标走
+            emit(phase: .move, normalized: session.normalized(point), contactId: id)
+            return
+        }
+
+        emit(phase: .move, normalized: target, contactId: id)
+    }
+
+    private func handleEnded(id: Int, point: CGPoint, size: CGSize) {
+        stopBurst(contactId: id)
+
+        if mappingEnabled, let target = keyMap.end(contactId: id) {
+            emit(phase: .up, normalized: target, contactId: id)
+        } else {
+            emit(phase: .up, normalized: session.normalized(point), contactId: id)
+        }
+        session.endContact(id: id)
+    }
+
+    private func handleCancelled(id: Int, point: CGPoint, size: CGSize) {
+        stopBurst(contactId: id)
+
+        if let target = keyMap.cancel(contactId: id) {
+            emit(phase: .cancel, normalized: target, contactId: id)
+        } else {
+            emit(phase: .cancel, normalized: session.normalized(point), contactId: id)
+        }
+        session.endContact(id: id)
+    }
+
+    // MARK: - 连发
+
+    /// 每个触点一条连发任务，互不干扰
+    private func startBurst(contactId: Int, sticker: LayoutSticker) {
+        stopBurst(contactId: contactId)
+        let interval = sticker.burstInterval
+        guard interval >= LayoutSticker.burstIntervalRange.lowerBound else { return }
+
+        let anchor = CGPoint(x: sticker.centerX, y: sticker.centerY)
+        // 只捕获一条发送闭包，不把整个 View 结构体带进 Task，
+        // 否则并发上下文会拿到一份 @State 快照，判断「手指是否还按着」会失真。
+        let sender = emit
+        burstTasks[contactId] = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                if Task.isCancelled { break }
+                sender(.down, anchor, contactId)
+                sender(.up, anchor, contactId)
+            }
+        }
+    }
+
+    private func stopBurst(contactId: Int) {
+        burstTasks[contactId]?.cancel()
+        burstTasks.removeValue(forKey: contactId)
+    }
+
+    private func stopAllBurst() {
+        for task in burstTasks.values { task.cancel() }
+        burstTasks.removeAll()
+    }
+
     // MARK: - 顶部工具栏
 
     private var toolbar: some View {
@@ -195,6 +299,27 @@ struct FullScreenTouchView: View {
             }
 
             statusBadge
+
+            // 映射总开关：关掉就退回原版「手指在哪点哪」
+            Button {
+                mappingEnabled.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: mappingEnabled ? "hand.tap.fill" : "hand.tap")
+                        .font(.system(size: 11))
+                    Text(mappingEnabled ? "映射开" : "映射关")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(mappingEnabled
+                              ? Color(red: 0.30, green: 0.72, blue: 0.44).opacity(0.85)
+                              : Color.white.opacity(0.16))
+                )
+                .foregroundStyle(Color.white)
+            }
 
             Spacer()
 
@@ -272,6 +397,17 @@ struct FullScreenTouchView: View {
                     panelLabel("预设", icon: "square.grid.2x2", active: false)
                 }
 
+                // 一键套用王者荣耀键位
+                Menu {
+                    ForEach(GamePresets.all) { entry in
+                        Button(entry.title) {
+                            applyGamePreset(entry)
+                        }
+                    }
+                } label: {
+                    panelLabel("王者键位", icon: "gamecontroller.fill", active: false)
+                }
+
                 if showAddPanel {
                     ForEach(LayoutSticker.Kind.allCases, id: \.self) { kind in
                         Button {
@@ -320,6 +456,7 @@ struct FullScreenTouchView: View {
             }
 
             if let selected = selectedSticker {
+                // 第一行：外形与大小
                 HStack(spacing: 9) {
                     Text(selected.style == .icon ? "图标" : selected.text)
                         .font(.system(size: 11, weight: .medium))
@@ -360,7 +497,7 @@ struct FullScreenTouchView: View {
                         get: { selected.diameterRatio },
                         set: { updateSelectedDiameter($0) }
                     ), in: LayoutSticker.diameterRange)
-                    .frame(maxWidth: 120)
+                    .frame(maxWidth: 110)
 
                     Image(systemName: "circle.lefthalf.filled")
                         .font(.system(size: 10))
@@ -369,7 +506,7 @@ struct FullScreenTouchView: View {
                         get: { selected.opacity },
                         set: { updateSelectedOpacity($0) }
                     ), in: LayoutSticker.opacityRange)
-                    .frame(maxWidth: 120)
+                    .frame(maxWidth: 100)
 
                     Button {
                         selectedStickerId = nil
@@ -381,11 +518,14 @@ struct FullScreenTouchView: View {
 
                     Spacer()
                 }
+
+                // 第二行：映射参数（这才是决定游戏里点得准不准的地方）
+                mappingRow(for: selected)
             } else {
                 HStack(spacing: 5) {
                     Image(systemName: "hand.tap")
                         .font(.system(size: 10))
-                    Text("轻点一个键位，即可调它的大小和透明度")
+                    Text("轻点一个键位，即可调它的大小、透明度与映射方式")
                         .font(.system(size: 11))
                 }
                 .foregroundStyle(Color.white.opacity(0.6))
@@ -397,6 +537,117 @@ struct FullScreenTouchView: View {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .fill(Color.black.opacity(0.45))
         )
+    }
+
+    // MARK: - 映射参数行
+
+    /// 选中键位的映射参数：点击/摇杆、摇杆半径、连发、是否参与映射
+    @ViewBuilder
+    private func mappingRow(for sticker: LayoutSticker) -> some View {
+        // 横屏下控件多，放横向滚动里，窄屏也不会被挤扁
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+            Text("映射")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.75))
+
+            // 点击 / 摇杆
+            HStack(spacing: 0) {
+                ForEach(LayoutSticker.OutputMode.allCases, id: \.self) { mode in
+                    Button {
+                        updateSelectedMode(mode)
+                    } label: {
+                        Text(mode.displayName)
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(sticker.mode == mode
+                                          ? Color(red: 0.42, green: 0.60, blue: 0.98)
+                                          : Color.clear)
+                            )
+                            .foregroundStyle(sticker.mode == mode
+                                             ? Color.white
+                                             : Color.white.opacity(0.6))
+                    }
+                }
+            }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.black.opacity(0.35))
+            )
+
+            // 摇杆半径（只有摇杆模式有意义）
+            if sticker.mode == .joystick {
+                Text("半径")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.white.opacity(0.65))
+                Slider(value: Binding(
+                    get: { sticker.radiusRatio },
+                    set: { updateSelectedRadius($0) }
+                ), in: LayoutSticker.radiusRange)
+                .frame(maxWidth: 110)
+                Text("\(Int(sticker.radiusRatio * 100))")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.8))
+                    .frame(width: 22, alignment: .trailing)
+            }
+
+            // 连发
+            Button {
+                toggleSelectedBurst()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: sticker.burstEnabled ? "repeat.circle.fill" : "repeat")
+                        .font(.system(size: 11))
+                    Text("连发")
+                        .font(.system(size: 11))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(sticker.burstEnabled
+                              ? Color(red: 0.93, green: 0.55, blue: 0.20).opacity(0.9)
+                              : Color.white.opacity(0.12))
+                )
+                .foregroundStyle(Color.white)
+            }
+
+            if sticker.burstEnabled {
+                Slider(value: Binding(
+                    get: { sticker.burstInterval },
+                    set: { updateSelectedBurstInterval($0) }
+                ), in: LayoutSticker.burstIntervalRange)
+                .frame(maxWidth: 90)
+                Text(String(format: "%.2fs", sticker.burstInterval))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.8))
+                    .frame(width: 38, alignment: .trailing)
+            }
+
+            // 是否参与映射
+            Button {
+                toggleSelectedMapped()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: sticker.isMapped ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 11))
+                    Text("参与")
+                        .font(.system(size: 11))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                )
+                .foregroundStyle(sticker.isMapped ? Color.green : Color.white.opacity(0.65))
+            }
+            }
+        }
     }
 
     // MARK: - 背景面板（独立，不和键位同时出现）
@@ -554,6 +805,53 @@ struct FullScreenTouchView: View {
                                     LayoutSticker.opacityRange.upperBound)
     }
 
+    // MARK: - 映射参数更新
+
+    private func updateSelectedMode(_ mode: LayoutSticker.OutputMode) {
+        guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].mode = mode
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func updateSelectedRadius(_ value: Double) {
+        guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].radiusRatio = min(max(value, LayoutSticker.radiusRange.lowerBound),
+                                        LayoutSticker.radiusRange.upperBound)
+    }
+
+    private func toggleSelectedBurst() {
+        guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].burstEnabled.toggle()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func updateSelectedBurstInterval(_ value: Double) {
+        guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].burstInterval = min(max(value, LayoutSticker.burstIntervalRange.lowerBound),
+                                          LayoutSticker.burstIntervalRange.upperBound)
+    }
+
+    private func toggleSelectedMapped() {
+        guard let id = selectedStickerId,
+              let idx = stickers.firstIndex(where: { $0.id == id }) else { return }
+        stickers[idx].isMapped.toggle()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// 应用内置游戏预设
+    private func applyGamePreset(_ entry: GamePresets.Entry) {
+        stickers = entry.stickers
+        selectedStickerId = nil
+        showAddPanel = false
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        showPresetSheet = false
+        isSheetClosing = false
+    }
+
     // MARK: - 添加键位
 
     private func addSticker(_ kind: LayoutSticker.Kind, style: LayoutSticker.Style = .text) {
@@ -567,7 +865,6 @@ struct FullScreenTouchView: View {
         stickers.append(sticker)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
-
     // MARK: - 图片用途
 
     private func applyPickedImageAsBackground() {
@@ -653,11 +950,13 @@ struct FullScreenTouchView: View {
     }
 
     private func releaseTouches() {
+        stopAllBurst()
         let ids = Set(session.contacts.keys)
         connection.releaseAll(contactIds: ids,
                               screenWidth: session.pixelWidth,
                               screenHeight: session.pixelHeight)
         session.reset()
+        keyMap.reset()
     }
 }
 
